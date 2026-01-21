@@ -55,8 +55,76 @@ import {
   CalendarClock,
   AlertCircle,
   ShoppingBag,
-  FileBarChart
+  FileBarChart,
+  WifiOff,
+  Wifi
 } from 'lucide-react';
+
+// --- CONFIGURAÇÃO DA API ---
+const API_BASE_URL = 'http://192.168.1.82:8000/api';
+
+// --- HELPERS DE INTEGRAÇÃO (ROBUSTOS) ---
+
+// Função genérica para ler dados (Servidor -> LocalStorage -> Fallback)
+const fetchData = async (key, fallbackValue) => {
+  // 1. Se estiver offline, vai direto para o local
+  if (!navigator.onLine) {
+     const local = localStorage.getItem(key);
+     return local ? JSON.parse(local) : fallbackValue;
+  }
+
+  try {
+    // 2. Tenta conectar ao servidor com timeout curto (2s)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+    const response = await fetch(`${API_BASE_URL}/data/${key}`, { 
+        signal: controller.signal,
+        method: 'GET'
+    });
+    clearTimeout(timeoutId);
+
+    // 3. Se sucesso, processa e retorna
+    if (response.ok) {
+        const json = await response.json();
+        const data = json.data !== undefined ? json.data : json;
+        // Atualiza o cache local para ter backup
+        localStorage.setItem(key, JSON.stringify(data));
+        return data;
+    }
+  } catch (error) {
+    // 4. Se der erro (timeout/network), avisa silenciosamente
+    console.warn(`[SISTEMA] Conexão instável para ${key}. Usando dados locais.`);
+  }
+
+  // 5. Fallback final: Retorna o que tem no navegador ou o valor padrão
+  const local = localStorage.getItem(key);
+  return local ? JSON.parse(local) : fallbackValue;
+};
+
+// Função genérica para salvar dados (Servidor + LocalStorage)
+const syncData = async (key, data) => {
+  // Sempre salva localmente primeiro (Garantia de persistência imediata)
+  localStorage.setItem(key, JSON.stringify(data));
+
+  if (!navigator.onLine) return; // Se offline, para aqui (já está salvo local)
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+    await fetch(`${API_BASE_URL}/data`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, data }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+  } catch (error) {
+    // Falha silenciosa: O dado já está salvo no localStorage, então não precisamos assustar o usuário
+    console.warn(`[SISTEMA] Falha ao sincronizar ${key} com servidor. Dados salvos localmente.`);
+  }
+};
 
 // --- DADOS INICIAIS (LIMPOS) ---
 
@@ -77,7 +145,7 @@ const INITIAL_INVENTORY = [];
 const INITIAL_SERVICES = [];
 const INITIAL_CLIENTS = [];
 const INITIAL_ORDERS = [];
-const INITIAL_BILLS = []; // Contas a Pagar
+const INITIAL_BILLS = []; 
 const INITIAL_LOGS = [
   { id: 1, action: 'Sistema Iniciado', user: 'System', time: 'Agora' },
 ];
@@ -110,16 +178,7 @@ const PRODUCTION_STEPS_TEMPLATE = [
   { id: 'qc', label: 'Controle de Qualidade', done: false }
 ];
 
-// --- HELPERS ---
-
-const loadState = (key, fallback) => {
-  try {
-    const saved = localStorage.getItem(key);
-    return saved ? JSON.parse(saved) : fallback;
-  } catch (e) {
-    return fallback;
-  }
-};
+// --- HELPERS DE FORMATAÇÃO ---
 
 const formatCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 const formatDate = (dateString) => new Date(dateString).toLocaleDateString('pt-BR');
@@ -225,12 +284,11 @@ const LoginScreen = ({ onLogin }) => {
           <h1 className="text-4xl font-black text-white tracking-tighter uppercase mb-2">Embyte<span className="text-blue-600">.SYS</span></h1>
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-zinc-950 border border-zinc-800 rounded-none">
             <Lock className="w-3 h-3 text-zinc-500" />
-            <span className="text-zinc-500 text-xs font-mono uppercase">Acesso Seguro v4.5</span>
+            <span className="text-zinc-500 text-xs font-mono uppercase">Acesso Seguro v4.5 (Hybrid)</span>
           </div>
         </div>
 
         {!selectedRole ? (
-            // SELEÇÃO DE CARGO
             <div className="space-y-3 animate-in fade-in slide-in-from-left-4 duration-300">
               <p className="text-zinc-500 text-xs uppercase font-bold mb-4 text-center">Selecione seu perfil de acesso</p>
               <Button onClick={() => setSelectedRole(ROLES.ADMIN)} className="w-full justify-between py-4 group hover:border-blue-500" variant="outline">
@@ -247,7 +305,6 @@ const LoginScreen = ({ onLogin }) => {
               </Button>
             </div>
         ) : (
-            // FORMULÁRIO DE SENHA
             <form onSubmit={handleLoginAttempt} className="animate-in fade-in slide-in-from-right-4 duration-300">
                 <div className="flex items-center gap-2 mb-6 text-zinc-400 cursor-pointer hover:text-white transition-colors" onClick={() => { setSelectedRole(null); setPassword(''); setError(false); }}>
                     <ArrowLeft size={16}/> <span className="text-xs uppercase font-bold">Voltar</span>
@@ -299,28 +356,29 @@ export default function GraficaEmbyte() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('login');
   
-  // Dados
-  const [orders, setOrders] = useState(() => loadState('embyte_orders', INITIAL_ORDERS));
-  const [inventory, setInventory] = useState(() => loadState('embyte_inventory', INITIAL_INVENTORY));
-  const [services, setServices] = useState(() => loadState('embyte_services', INITIAL_SERVICES)); 
-  const [clients, setClients] = useState(() => loadState('embyte_clients', INITIAL_CLIENTS));
-  const [logs, setLogs] = useState(() => loadState('embyte_logs', INITIAL_LOGS));
-  const [transactions, setTransactions] = useState(() => loadState('embyte_transactions', INITIAL_TRANSACTIONS));
-  const [bills, setBills] = useState(() => loadState('embyte_bills', INITIAL_BILLS));
-  const [cashClosings, setCashClosings] = useState(() => loadState('embyte_closings', INITIAL_CLOSINGS));
-  const [cashStatus, setCashStatus] = useState(() => loadState('embyte_cash_status', INITIAL_CASH_STATUS));
+  // Controle de Carregamento da API e Modo de Segurança
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+
+  // Estados com valores iniciais padrão (vazios), aguardando API
+  const [orders, setOrders] = useState(INITIAL_ORDERS);
+  const [inventory, setInventory] = useState(INITIAL_INVENTORY);
+  const [services, setServices] = useState(INITIAL_SERVICES); 
+  const [clients, setClients] = useState(INITIAL_CLIENTS);
+  const [logs, setLogs] = useState(INITIAL_LOGS);
+  const [transactions, setTransactions] = useState(INITIAL_TRANSACTIONS);
+  const [bills, setBills] = useState(INITIAL_BILLS);
+  const [cashClosings, setCashClosings] = useState(INITIAL_CLOSINGS);
+  const [cashStatus, setCashStatus] = useState(INITIAL_CASH_STATUS);
+  const [settings, setSettings] = useState(INITIAL_SETTINGS);
+  
   const [cart, setCart] = useState([]); 
   
-  // Estados para Relatórios e Outras Views (elevados para evitar erro de hooks)
+  // Estados para Relatórios e Outras Views
   const [reportType, setReportType] = useState('vendas');
   const [reportStartDate, setReportStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [reportEndDate, setReportEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [precificacaoTab, setPrecificacaoTab] = useState('services');
-
-  const [settings, setSettings] = useState(() => {
-    const loaded = loadState('embyte_settings', INITIAL_SETTINGS);
-    return { ...loaded, ...INITIAL_SETTINGS, name: loaded.name || INITIAL_SETTINGS.name }; 
-  });
 
   // Estados UI
   const [notification, setNotification] = useState(null);
@@ -335,7 +393,7 @@ export default function GraficaEmbyte() {
 
   // Estados de Formulário
   const [tempClient, setTempClient] = useState({ name: '', doc: '', contact: '', email: '' });
-  const [tempInventory, setTempInventory] = useState({ name: '', category: 'Outros', unit: '', measureType: 'unit', quantity: 0, minStock: 0, price: 0, sellPrice: 0 }); // Added sellPrice
+  const [tempInventory, setTempInventory] = useState({ name: '', category: 'Outros', unit: '', measureType: 'unit', quantity: 0, minStock: 0, price: 0, sellPrice: 0 }); 
   const [tempMovement, setTempMovement] = useState({ type: 'in', quantity: 0, reason: 'Compra' });
   const [tempService, setTempService] = useState({ name: '', w: '', h: '', basePrice: '', extras: [], stockId: '', pricingType: 'sheet' });
   const [tempExtra, setTempExtra] = useState({ name: '', value: '' });
@@ -357,17 +415,85 @@ export default function GraficaEmbyte() {
   const [editingOrderId, setEditingOrderId] = useState(null);
   const [selectedClientId, setSelectedClientId] = useState('');
 
-  // --- EFEITOS ---
-  useEffect(() => localStorage.setItem('embyte_orders', JSON.stringify(orders)), [orders]);
-  useEffect(() => localStorage.setItem('embyte_inventory', JSON.stringify(inventory)), [inventory]);
-  useEffect(() => localStorage.setItem('embyte_services', JSON.stringify(services)), [services]);
-  useEffect(() => localStorage.setItem('embyte_clients', JSON.stringify(clients)), [clients]);
-  useEffect(() => localStorage.setItem('embyte_logs', JSON.stringify(logs)), [logs]);
-  useEffect(() => localStorage.setItem('embyte_settings', JSON.stringify(settings)), [settings]);
-  useEffect(() => localStorage.setItem('embyte_transactions', JSON.stringify(transactions)), [transactions]);
-  useEffect(() => localStorage.setItem('embyte_bills', JSON.stringify(bills)), [bills]); 
-  useEffect(() => localStorage.setItem('embyte_closings', JSON.stringify(cashClosings)), [cashClosings]);
-  useEffect(() => localStorage.setItem('embyte_cash_status', JSON.stringify(cashStatus)), [cashStatus]);
+  // --- EFEITOS (CARREGAMENTO E SINCRONIZAÇÃO) ---
+
+  // Monitorar status da rede
+  useEffect(() => {
+      const handleOnline = () => setIsOffline(false);
+      const handleOffline = () => setIsOffline(true);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      return () => {
+          window.removeEventListener('online', handleOnline);
+          window.removeEventListener('offline', handleOffline);
+      };
+  }, []);
+
+  // 1. CARREGAR DADOS DA API (OU LOCAL) AO INICIAR
+  useEffect(() => {
+    const loadAllData = async () => {
+      try {
+        const [
+          loadedOrders,
+          loadedInventory,
+          loadedServices,
+          loadedClients,
+          loadedLogs,
+          loadedTransactions,
+          loadedBills,
+          loadedClosings,
+          loadedCashStatus,
+          loadedSettings
+        ] = await Promise.all([
+          fetchData('embyte_orders', INITIAL_ORDERS),
+          fetchData('embyte_inventory', INITIAL_INVENTORY),
+          fetchData('embyte_services', INITIAL_SERVICES),
+          fetchData('embyte_clients', INITIAL_CLIENTS),
+          fetchData('embyte_logs', INITIAL_LOGS),
+          fetchData('embyte_transactions', INITIAL_TRANSACTIONS),
+          fetchData('embyte_bills', INITIAL_BILLS),
+          fetchData('embyte_closings', INITIAL_CLOSINGS),
+          fetchData('embyte_cash_status', INITIAL_CASH_STATUS),
+          fetchData('embyte_settings', INITIAL_SETTINGS)
+        ]);
+
+        setOrders(loadedOrders);
+        setInventory(loadedInventory);
+        setServices(loadedServices);
+        setClients(loadedClients);
+        setLogs(loadedLogs);
+        setTransactions(loadedTransactions);
+        setBills(loadedBills);
+        setCashClosings(loadedClosings);
+        setCashStatus(loadedCashStatus);
+        // Mesclar configurações carregadas com padrão para garantir campos novos
+        setSettings(prev => ({ ...prev, ...loadedSettings }));
+        
+        setIsDataLoaded(true); // Habilita a sincronização subsequente
+        console.log("Sistema: Dados carregados.");
+      } catch (e) {
+        console.warn("Erro ao carregar dados iniciais (usando defaults):", e);
+        setIsDataLoaded(true); 
+      }
+    };
+
+    loadAllData();
+  }, []);
+
+  // 2. SINCRONIZAR ALTERAÇÕES COM A API
+  // Só sincroniza SE os dados já foram carregados COM SUCESSO (isDataLoaded)
+  // O syncData agora cuida de não quebrar se a API falhar
+  
+  useEffect(() => { if(isDataLoaded) syncData('embyte_orders', orders); }, [orders, isDataLoaded]);
+  useEffect(() => { if(isDataLoaded) syncData('embyte_inventory', inventory); }, [inventory, isDataLoaded]);
+  useEffect(() => { if(isDataLoaded) syncData('embyte_services', services); }, [services, isDataLoaded]);
+  useEffect(() => { if(isDataLoaded) syncData('embyte_clients', clients); }, [clients, isDataLoaded]);
+  useEffect(() => { if(isDataLoaded) syncData('embyte_logs', logs); }, [logs, isDataLoaded]);
+  useEffect(() => { if(isDataLoaded) syncData('embyte_settings', settings); }, [settings, isDataLoaded]);
+  useEffect(() => { if(isDataLoaded) syncData('embyte_transactions', transactions); }, [transactions, isDataLoaded]);
+  useEffect(() => { if(isDataLoaded) syncData('embyte_bills', bills); }, [bills, isDataLoaded]);
+  useEffect(() => { if(isDataLoaded) syncData('embyte_closings', cashClosings); }, [cashClosings, isDataLoaded]);
+  useEffect(() => { if(isDataLoaded) syncData('embyte_cash_status', cashStatus); }, [cashStatus, isDataLoaded]);
 
   // --- LÓGICA DE NEGÓCIO ---
 
@@ -448,7 +574,7 @@ export default function GraficaEmbyte() {
     setModalType(type);
     setEditingItem(item);
     if (type === 'client') setTempClient(item || { name: '', doc: '', contact: '', email: '' });
-    else if (type === 'inventory') setTempInventory(item || { name: '', category: 'Outros', unit: '', measureType: 'unit', quantity: 0, minStock: 0, price: 0, sellPrice: 0 }); // Added default sellPrice
+    else if (type === 'inventory') setTempInventory(item || { name: '', category: 'Outros', unit: '', measureType: 'unit', quantity: 0, minStock: 0, price: 0, sellPrice: 0 }); // Added default sell price
     else if (type === 'service') setTempService(item || { name: '', w: '', h: '', basePrice: '', extras: [], stockId: '', pricingType: 'sheet' });
     else if (type === 'movement') setTempMovement({ type: 'in', quantity: 0, reason: 'Compra' });
     else if (type === 'transaction') setTempTransaction({ type: 'in', description: '', value: 0, category: 'Vendas', method: 'Dinheiro (Gaveta)' });
@@ -1536,8 +1662,6 @@ export default function GraficaEmbyte() {
 
     const selectedInventoryItem = inventory.find(i => i.id === parseInt(productSaleData.inventoryId));
     
-    // FIXED: REMOVED useEffect. Using onChange handler instead.
-
     return (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in slide-in-from-right-4 duration-300">
         <div className="lg:col-span-5 bg-zinc-900 border border-zinc-800 flex flex-col h-fit">
@@ -2557,7 +2681,10 @@ export default function GraficaEmbyte() {
                  view === 'precificacao' ? 'Catálogo de Serviços' :
                  view === 'configuracoes' ? 'Configurações' : 'Painel'}
               </h1>
-              <p className="text-zinc-500 text-sm font-mono mt-1">{new Date().toLocaleDateString('pt-PT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+              <p className="text-zinc-500 text-sm font-mono mt-1 flex items-center gap-2">
+                {new Date().toLocaleDateString('pt-PT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                {isOffline && <span className="text-xs bg-red-900 text-red-200 px-2 py-0.5 rounded border border-red-700 flex items-center gap-1 font-bold animate-pulse"><WifiOff size={10}/> MODO OFFLINE (LEITURA)</span>}
+              </p>
            </div>
         </header>
         {view === 'clientes' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && ClientesView()}
