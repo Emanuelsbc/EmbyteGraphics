@@ -66,11 +66,9 @@ const API_BASE_URL = 'http://100.95.120.82:8000/api/data';
 // --- HELPERS DE INTEGRAÇÃO (SERVIDOR APENAS - SEM LOCALSTORAGE) ---
 
 /**
- * Busca dados exclusivamente do servidor.
- * Se falhar, retorna o fallbackValue. NUNCA lê do navegador.
+ * Busca dados exclusivamente do servidor com PROTEÇÃO ANTI-CRASH.
  */
 const fetchData = async (key, fallbackValue) => {
-  // 1. Verificação de conexão
   if (!navigator.onLine) {
     console.warn(`[SISTEMA] Offline. Não é possível buscar ${key}.`);
     return fallbackValue;
@@ -78,8 +76,7 @@ const fetchData = async (key, fallbackValue) => {
 
   try {
     const controller = new AbortController();
-    // Timeout um pouco maior (5s) pois dependemos 100% da rede
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // Timeout aumentado
 
     const response = await fetch(`${API_BASE_URL}/data/${key}`, {
       signal: controller.signal,
@@ -90,8 +87,23 @@ const fetchData = async (key, fallbackValue) => {
 
     if (response.ok) {
       const json = await response.json();
-      // Retorna os dados do servidor
-      return json.data !== undefined ? json.data : json;
+      
+      // Lógica de "Desembrulhar" (Unwrap) para garantir que pegamos os dados certos
+      let result = json;
+      if (json.data !== undefined) result = json.data;
+      
+      // PROTEÇÃO CRÍTICA: Se esperávamos um Array e veio null/objeto, retorna fallback
+      if (Array.isArray(fallbackValue) && !Array.isArray(result)) {
+         // Tenta achar um array dentro do objeto caso a estrutura esteja aninhada
+         if (result && typeof result === 'object') {
+            const possibleArray = Object.values(result).find(v => Array.isArray(v));
+            if (possibleArray) return possibleArray;
+         }
+         return fallbackValue;
+      }
+
+      // Se result for null/undefined, retorna fallback
+      return result !== undefined && result !== null ? result : fallbackValue;
     } else {
       console.error(`[SISTEMA] Erro servidor (${response.status}) ao buscar ${key}`);
     }
@@ -99,17 +111,13 @@ const fetchData = async (key, fallbackValue) => {
     console.warn(`[SISTEMA] Falha na conexão para ${key}.`, error);
   }
 
-  // Se der qualquer erro, retorna o valor padrão (vazio)
-  // NÃO tenta ler localStorage
   return fallbackValue;
 };
 
 /**
  * Salva dados exclusivamente no servidor.
- * Se falhar, os dados NÃO são persistidos em lugar nenhum.
  */
 const syncData = async (key, data) => {
-  // Se offline, aborta e avisa (não salva localmente)
   if (!navigator.onLine) {
     console.warn(`[SISTEMA] Offline. ${key} NÃO FOI SALVO.`);
     return;
@@ -123,12 +131,11 @@ const syncData = async (key, data) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key, data }),
-                signal: controller.signal
+      signal: controller.signal
     });
     clearTimeout(timeoutId);
     console.log(`[SISTEMA] ${key} salvo no servidor.`);
   } catch (error) {
-    // Apenas loga o erro. Dados perdidos se não estiverem na memória RAM.
     console.error(`[SISTEMA] ERRO CRÍTICO: Falha ao salvar ${key} no servidor.`, error);
   }
 };
@@ -141,7 +148,6 @@ const ROLES = {
   DESIGNER: 'designer'
 };
 
-// --- CREDENCIAIS DE ACESSO ---
 const CREDENTIALS = {
   [ROLES.ADMIN]: 'admin123',
   [ROLES.VENDEDOR]: 'venda123',
@@ -153,10 +159,7 @@ const INITIAL_SERVICES = [];
 const INITIAL_CLIENTS = [];
 const INITIAL_ORDERS = [];
 const INITIAL_BILLS = [];
-const INITIAL_LOGS = [
-  { id: 1, action: 'Sistema Iniciado', user: 'System', time: 'Agora' },
-];
-
+const INITIAL_LOGS = [{ id: 1, action: 'Sistema Iniciado', user: 'System', time: 'Agora' }];
 const INITIAL_TRANSACTIONS = [];
 const INITIAL_CLOSINGS = [];
 const INITIAL_CASH_STATUS = { isOpen: false, openingBalance: 0 };
@@ -179,16 +182,22 @@ const PAYMENT_METHODS = ['Dinheiro (Gaveta)', 'Pix', 'Cartão Débito', 'Cartão
 
 const PRODUCTION_STEPS_TEMPLATE = [
   { id: 'files', label: 'Arquivos Conferidos', done: false },
-{ id: 'print', label: 'Impressão Realizada', done: false },
-{ id: 'cut', label: 'Corte / Refile', done: false },
-{ id: 'finish', label: 'Acabamento Final', done: false },
-{ id: 'qc', label: 'Controle de Qualidade', done: false }
+  { id: 'print', label: 'Impressão Realizada', done: false },
+  { id: 'cut', label: 'Corte / Refile', done: false },
+  { id: 'finish', label: 'Acabamento Final', done: false },
+  { id: 'qc', label: 'Controle de Qualidade', done: false }
 ];
 
 // --- HELPERS DE FORMATAÇÃO ---
 
-const formatCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
-const formatDate = (dateString) => new Date(dateString).toLocaleDateString('pt-BR');
+const formatCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    // Corrige problema de timezone considerando a string como data local
+    const parts = dateString.split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return new Date(dateString).toLocaleDateString('pt-BR');
+};
 const formatDateTime = (dateString) => new Date(dateString).toLocaleString('pt-BR');
 
 // --- COMPONENTES UI ---
@@ -367,7 +376,7 @@ export default function GraficaEmbyte() {
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
-  // Estados com valores iniciais padrão (vazios), aguardando API
+  // Estados com valores iniciais padrão
   const [orders, setOrders] = useState(INITIAL_ORDERS);
   const [inventory, setInventory] = useState(INITIAL_INVENTORY);
   const [services, setServices] = useState(INITIAL_SERVICES);
@@ -381,7 +390,7 @@ export default function GraficaEmbyte() {
 
   const [cart, setCart] = useState([]);
 
-  // Estados para Relatórios e Outras Views
+  // Estados para Relatórios
   const [reportType, setReportType] = useState('vendas');
   const [reportStartDate, setReportStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [reportEndDate, setReportEndDate] = useState(new Date().toISOString().split('T')[0]);
@@ -408,7 +417,7 @@ export default function GraficaEmbyte() {
   const [openingValue, setOpeningValue] = useState('');
   const [productionNote, setProductionNote] = useState('');
 
-  // Estados de Calculadora (Serviço) e Venda (Produto)
+  // Estados de Calculadora
   const [calcData, setCalcData] = useState({
     itemW: '', itemH: '', quantity: '', serviceId: '', sides: 1, finishCost: 0, discount: 0, deliveryTime: '5 dias úteis', selectedExtras: []
   });
@@ -422,7 +431,6 @@ export default function GraficaEmbyte() {
 
   // --- EFEITOS (CARREGAMENTO E SINCRONIZAÇÃO) ---
 
-  // Monitorar status da rede
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
@@ -434,8 +442,7 @@ export default function GraficaEmbyte() {
     };
   }, []);
 
-  // 1. CARREGAR DADOS DA API AO INICIAR
-  // Se falhar, fica com defaults (vazios), não lê localstorage
+  // 1. CARREGAR DADOS COM PROTEÇÃO
   useEffect(() => {
     const loadAllData = async () => {
       try {
@@ -452,33 +459,34 @@ export default function GraficaEmbyte() {
           loadedSettings
         ] = await Promise.all([
           fetchData('embyte_orders', INITIAL_ORDERS),
-                              fetchData('embyte_inventory', INITIAL_INVENTORY),
-                              fetchData('embyte_services', INITIAL_SERVICES),
-                              fetchData('embyte_clients', INITIAL_CLIENTS),
-                              fetchData('embyte_logs', INITIAL_LOGS),
-                              fetchData('embyte_transactions', INITIAL_TRANSACTIONS),
-                              fetchData('embyte_bills', INITIAL_BILLS),
-                              fetchData('embyte_closings', INITIAL_CLOSINGS),
-                              fetchData('embyte_cash_status', INITIAL_CASH_STATUS),
-                              fetchData('embyte_settings', INITIAL_SETTINGS)
+          fetchData('embyte_inventory', INITIAL_INVENTORY),
+          fetchData('embyte_services', INITIAL_SERVICES),
+          fetchData('embyte_clients', INITIAL_CLIENTS),
+          fetchData('embyte_logs', INITIAL_LOGS),
+          fetchData('embyte_transactions', INITIAL_TRANSACTIONS),
+          fetchData('embyte_bills', INITIAL_BILLS),
+          fetchData('embyte_closings', INITIAL_CLOSINGS),
+          fetchData('embyte_cash_status', INITIAL_CASH_STATUS),
+          fetchData('embyte_settings', INITIAL_SETTINGS)
         ]);
 
-        setOrders(loadedOrders);
-        setInventory(loadedInventory);
-        setServices(loadedServices);
-        setClients(loadedClients);
-        setLogs(loadedLogs);
-        setTransactions(loadedTransactions);
-        setBills(loadedBills);
-        setCashClosings(loadedClosings);
-        setCashStatus(loadedCashStatus);
-        // Mesclar configurações carregadas com padrão para garantir campos novos
+        // PROTEÇÃO: Garante que sejam arrays para evitar .map() crash
+        setOrders(Array.isArray(loadedOrders) ? loadedOrders : []);
+        setInventory(Array.isArray(loadedInventory) ? loadedInventory : []);
+        setServices(Array.isArray(loadedServices) ? loadedServices : []);
+        setClients(Array.isArray(loadedClients) ? loadedClients : []);
+        setLogs(Array.isArray(loadedLogs) ? loadedLogs : []);
+        setTransactions(Array.isArray(loadedTransactions) ? loadedTransactions : []);
+        setBills(Array.isArray(loadedBills) ? loadedBills : []);
+        setCashClosings(Array.isArray(loadedClosings) ? loadedClosings : []);
+        
+        setCashStatus(loadedCashStatus || INITIAL_CASH_STATUS);
         setSettings(prev => ({ ...prev, ...loadedSettings }));
 
-        setIsDataLoaded(true); // Habilita a sincronização subsequente
-        console.log("Sistema: Dados carregados do servidor.");
+        setIsDataLoaded(true); 
+        console.log("Sistema: Dados carregados e validados.");
       } catch (e) {
-        console.warn("Erro ao carregar dados do servidor. Usando valores padrão.", e);
+        console.warn("Erro ao carregar dados. Usando padrão.", e);
         setIsDataLoaded(true);
       }
     };
@@ -486,8 +494,7 @@ export default function GraficaEmbyte() {
     loadAllData();
   }, []);
 
-  // 2. SINCRONIZAR ALTERAÇÕES COM A API
-  // Só sincroniza SE os dados já foram carregados COM SUCESSO
+  // 2. SINCRONIZAR
   useEffect(() => { if(isDataLoaded) syncData('embyte_orders', orders); }, [orders, isDataLoaded]);
   useEffect(() => { if(isDataLoaded) syncData('embyte_inventory', inventory); }, [inventory, isDataLoaded]);
   useEffect(() => { if(isDataLoaded) syncData('embyte_services', services); }, [services, isDataLoaded]);
@@ -578,7 +585,7 @@ export default function GraficaEmbyte() {
     setModalType(type);
     setEditingItem(item);
     if (type === 'client') setTempClient(item || { name: '', doc: '', contact: '', email: '' });
-    else if (type === 'inventory') setTempInventory(item || { name: '', category: 'Outros', unit: '', measureType: 'unit', quantity: 0, minStock: 0, price: 0, sellPrice: 0 }); // Added default sell price
+    else if (type === 'inventory') setTempInventory(item || { name: '', category: 'Outros', unit: '', measureType: 'unit', quantity: 0, minStock: 0, price: 0, sellPrice: 0 });
     else if (type === 'service') setTempService(item || { name: '', w: '', h: '', basePrice: '', extras: [], stockId: '', pricingType: 'sheet' });
     else if (type === 'movement') setTempMovement({ type: 'in', quantity: 0, reason: 'Compra' });
     else if (type === 'transaction') setTempTransaction({ type: 'in', description: '', value: 0, category: 'Vendas', method: 'Dinheiro (Gaveta)' });
@@ -594,7 +601,6 @@ export default function GraficaEmbyte() {
 
     const val = parseFloat(bill.value);
 
-    // Create expense transaction
     const newTrans = {
       id: Date.now(),
       type: 'out',
@@ -606,7 +612,6 @@ export default function GraficaEmbyte() {
     };
     setTransactions([newTrans, ...transactions]);
 
-    // Update bill status
     const updatedBills = bills.map(b => b.id === bill.id ? { ...b, status: 'pago', paidDate: new Date().toISOString() } : b);
     setBills(updatedBills);
 
@@ -627,7 +632,7 @@ export default function GraficaEmbyte() {
         quantity: +tempInventory.quantity,
         minStock: +tempInventory.minStock,
         price: +tempInventory.price,
-        sellPrice: +tempInventory.sellPrice || 0 // Save sell price
+        sellPrice: +tempInventory.sellPrice || 0
       };
       const newList = editingItem ? inventory.map(i => i.id === id ? { ...itemToSave, id } : i) : [...inventory, { ...itemToSave, id }];
       setInventory(newList);
@@ -657,7 +662,7 @@ export default function GraficaEmbyte() {
         value: val,
         date: new Date().toISOString().split('T')[0],
         category: tempTransaction.category,
-        method: tempTransaction.method // Salvando o método
+        method: tempTransaction.method 
       };
       setTransactions([newTrans, ...transactions]);
       addLog(`Lançamento manual Caixa: ${tempTransaction.type} ${val} (${tempTransaction.method})`);
@@ -763,7 +768,6 @@ export default function GraficaEmbyte() {
       let productionPrice = 0;
       let details = {};
 
-      // Get cost of linked material
       const linkedStock = inventory.find(i => i.id === service.stockId);
       const materialCost = linkedStock ? linkedStock.price : 0;
 
@@ -887,7 +891,7 @@ export default function GraficaEmbyte() {
         serviceName: product.name,
         description: `Produto/Revenda: ${product.name}`,
         finalPrice: finalPrice,
-        totalCost: totalCost, // Saved cost for profit calc
+        totalCost: totalCost, 
         stockId: product.id,
         quantity: parseInt(quantity),
         unitPrice: parseFloat(unitPrice),
@@ -909,7 +913,8 @@ export default function GraficaEmbyte() {
     const handleCreateOrder = () => {
       if (cart.length === 0) { showToast("Adicione itens ao pedido primeiro.", "error"); return; }
 
-      const client = clients.find(c => c.id === parseInt(selectedClientId));
+      // CORREÇÃO: Garante que o cliente seja encontrado mesmo se selectedClientId for string ou number
+      const client = clients.find(c => c.id == selectedClientId);
       if (!client) { showToast("Selecione um cliente cadastrado.", "error"); return; }
 
       const totalValue = cart.reduce((acc, item) => acc + item.finalPrice, 0);
@@ -953,7 +958,8 @@ export default function GraficaEmbyte() {
         setCart(order.technicalData.items);
         setEditingOrderId(order.id);
         const client = clients.find(c => c.name === order.client);
-        if(client) setSelectedClientId(client.id);
+        // CORREÇÃO: Converte ID para string para bater com o value do <select>
+        if(client) setSelectedClientId(client.id.toString());
       } else if (order.technicalData) {
         setCalcData({ ...order.technicalData.technicalParams });
         setCalcResult(order.technicalData);
@@ -975,7 +981,7 @@ export default function GraficaEmbyte() {
         minValue: minValue,
         payValue: minValue,
         type: type,
-        method: 'Pix' // Default method
+        method: 'Pix' 
       });
       setModalType('payment');
       setModalOpen(true);
@@ -1022,7 +1028,6 @@ export default function GraficaEmbyte() {
 
       const transactionDesc = paymentData.type === 'signal' ? `Sinal Pedido #${order.id}` : `Pagamento Restante #${order.id}`;
 
-      // Logic to determine next status
       const items = order.technicalData?.items || [];
       const hasServiceItems = items.some(item => !item.isProduct);
       const isResaleOrder = items.length > 0 && !hasServiceItems;
@@ -1059,7 +1064,7 @@ export default function GraficaEmbyte() {
         value: val,
         date: new Date().toISOString().split('T')[0],
         category: 'Recebimento Pedido',
-        method: paymentData.method // Saving payment method
+        method: paymentData.method 
       };
       setTransactions([newTransaction, ...transactions]);
 
@@ -1132,14 +1137,15 @@ export default function GraficaEmbyte() {
       let rows = [];
       let summaryHtml = "";
 
-      // --- VENDAS REPORT ---
+      // --- CORREÇÃO: Comparação de Strings (YYYY-MM-DD) para evitar erro de fuso horário ---
       if (reportType === 'vendas') {
         title = `Relatório Detalhado de Vendas (${formatDate(startDate)} a ${formatDate(endDate)})`;
         headers = ['Data', 'Pedido', 'Cliente', 'Custo Prod.', 'Valor Venda', 'Lucro Bruto', 'Margem (%)'];
 
         const data = orders.filter(o => {
-          const d = new Date(o.date);
-          return d >= new Date(startDate) && d <= new Date(endDate);
+          if (!o.date) return false;
+          // Compara strings diretamente: "2024-01-01" >= "2024-01-01"
+          return o.date >= startDate && o.date <= endDate;
         });
 
         let totalRevenue = 0;
@@ -1195,8 +1201,8 @@ export default function GraficaEmbyte() {
         headers = ['Data', 'Descrição', 'Categoria', 'Tipo', 'Valor'];
 
         const data = transactions.filter(t => {
-          const d = new Date(t.date);
-          return d >= new Date(startDate) && d <= new Date(endDate);
+            if (!t.date) return false;
+            return t.date >= startDate && t.date <= endDate;
         });
 
         rows = data.map(t => [
@@ -1211,7 +1217,6 @@ export default function GraficaEmbyte() {
         const totalOut = data.filter(t => t.type === 'out').reduce((acc, t) => acc + t.value, 0);
         const balance = totalIn - totalOut;
 
-        // Group by Category
         const categoryTotals = data.reduce((acc, t) => {
           acc[t.category] = (acc[t.category] || 0) + t.value;
           return acc;
@@ -1338,10 +1343,8 @@ export default function GraficaEmbyte() {
     };
 
     const handlePrintOP = (order) => {
-      // ... (Mantido código anterior de impressão de OP)
       const printWindow = window.open('', '', 'width=900,height=1100');
       const items = order.technicalData?.items || (order.technicalData ? [order.technicalData] : []);
-      // ... (Styles e HTML da OP mantidos iguais para brevidade, mas funcionais)
       const styles = `
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
       body { font-family: 'Inter', sans-serif; padding: 40px; color: #1a1a1a; line-height: 1.4; font-size: 11px; }
@@ -1562,17 +1565,13 @@ export default function GraficaEmbyte() {
       const today = new Date().toISOString().split('T')[0];
       const filteredTransactions = transactions.filter(t => t.date === today);
 
-      // Separação de valores
       const openingTrans = filteredTransactions.find(t => t.category === 'Abertura');
       const openingValue = openingTrans ? openingTrans.value : 0;
 
-      // Entradas reais (sem abertura)
       const operationalIn = filteredTransactions.filter(t => t.type === 'in' && t.category !== 'Abertura').reduce((acc, t) => acc + t.value, 0);
 
-      // Saídas
       const totalOut = filteredTransactions.filter(t => t.type === 'out').reduce((acc, t) => acc + t.value, 0);
 
-      // Saldo físico na gaveta
       const currentDrawerBalance = openingValue + operationalIn - totalOut;
 
       return (
@@ -1773,7 +1772,7 @@ export default function GraficaEmbyte() {
             setProductSaleData({
               ...productSaleData,
               inventoryId: id,
-              unitPrice: item ? (item.sellPrice || item.price) : '' // Auto-fill with sellPrice if available, else cost
+              unitPrice: item ? (item.sellPrice || item.price) : '' 
             })
           }}
           >
@@ -1934,8 +1933,6 @@ export default function GraficaEmbyte() {
       const monthIn = monthTransactions.filter(t => t.type === 'in' && t.category !== 'Abertura').reduce((acc, t) => acc + t.value, 0);
       const monthOut = monthTransactions.filter(t => t.type === 'out').reduce((acc, t) => acc + t.value, 0);
       const monthBalance = monthIn - monthOut;
-
-      const monthOpeningCash = monthTransactions.filter(t => t.type === 'in' && t.category === 'Abertura').reduce((acc, t) => acc + t.value, 0);
 
       const weekData = [];
       for (let i = 6; i >= 0; i--) {
@@ -2098,7 +2095,6 @@ export default function GraficaEmbyte() {
 
           <div className="flex gap-2 mb-2">
           <Button variant="secondary" className="flex-1" onClick={() => handlePrintOP(order)} title="Imprimir PDF"><Printer size={16}/></Button>
-          {/* Botão de notificação de andamento */}
           <Button variant="whatsapp" className="flex-1" onClick={() => sendWhatsApp(order, 'andamento')} title="Notificar Andamento"><Send size={16} className="mr-2"/> Status</Button>
           </div>
 
@@ -2704,4 +2700,3 @@ export default function GraficaEmbyte() {
         </div>
     );
 }
-
