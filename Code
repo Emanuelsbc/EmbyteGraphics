@@ -176,7 +176,8 @@ const INITIAL_SETTINGS = {
   blockUnpaid: true
 };
 
-const CATEGORIES = ['Papel', 'Mídia', 'Tinta', 'Acabamento', 'Eletrônicos/Produtos', 'Outros'];
+// [MODIFICAÇÃO] Adicionado 'Terceirizado'
+const CATEGORIES = ['Papel', 'Mídia', 'Tinta', 'Acabamento', 'Eletrônicos/Produtos', 'Terceirizado', 'Outros'];
 const EXPENSE_CATEGORIES = ['Salários', 'Fornecedores', 'Aluguel/Energia/Net', 'Manutenção', 'Impostos', 'Outros'];
 const PAYMENT_METHODS = ['Dinheiro (Gaveta)', 'Pix', 'Cartão Débito', 'Cartão Crédito', 'Transferência'];
 
@@ -641,11 +642,14 @@ export default function GraficaEmbyte() {
       setClients(newList);
       addLog(`Cliente ${editingItem ? 'editado' : 'criado'}: ${tempClient.name}`);
     } else if (modalType === 'inventory') {
+      // [MODIFICAÇÃO] Se for terceirizado, define estoque infinito (99999) para não alertar falta
+      const isTerceirizado = tempInventory.category === 'Terceirizado';
       const itemToSave = {
         ...tempInventory,
-        quantity: +tempInventory.quantity,
-        minStock: +tempInventory.minStock,
+        quantity: isTerceirizado ? 99999 : +tempInventory.quantity,
+        minStock: isTerceirizado ? 0 : +tempInventory.minStock,
         price: +tempInventory.price,
+        // ... continua igual ...       price: +tempInventory.price,
         sellPrice: +tempInventory.sellPrice || 0
       };
       const newList = editingItem ? inventory.map(i => i.id === id ? { ...itemToSave, id } : i) : [...inventory, { ...itemToSave, id }];
@@ -2178,8 +2182,21 @@ export default function GraficaEmbyte() {
             <span className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-orange-400 border border-orange-900 px-1 py-0.5 rounded"><Box size={10}/> Unidade</span>
           }
           </td>
-          <td className="px-6 py-4"><span className="font-mono font-bold">{item.quantity} {item.unit}</span></td>
-          <td className="px-6 py-4">{item.quantity <= item.minStock ? <span className="text-red-500 flex items-center gap-1"><AlertTriangle size={12}/> Baixo</span> : <span className="text-emerald-500 flex items-center gap-1"><CheckSquare size={12}/> OK</span>}</td>
+          <td className="px-6 py-4">
+          {item.category === 'Terceirizado' ? (
+            <span className="text-zinc-500 font-bold text-xs uppercase bg-zinc-800 px-2 py-1 rounded">Externo</span>
+          ) : (
+            <span className="font-mono font-bold">{item.quantity} {item.unit}</span>
+          )}
+          </td>
+          <td className="px-6 py-4">
+          {item.category === 'Terceirizado' ? (
+            <span className="text-blue-400 flex items-center gap-1 text-xs"><CheckSquare size={12}/> Serviço</span>
+          ) : (
+            item.quantity <= item.minStock ?
+            <span className="text-red-500 flex items-center gap-1"><AlertTriangle size={12}/> Baixo</span> : <span className="text-emerald-500 flex items-center gap-1"><CheckSquare size={12}/> OK</span>
+          )}
+          </td>
           {showCosts && <td className="px-6 py-4 font-mono">{formatCurrency(item.price)}</td>}
           <td className="px-6 py-4 font-mono text-emerald-400">{item.sellPrice > 0 ? formatCurrency(item.sellPrice) : '-'}</td>
           <td className="px-6 py-4 flex gap-2 justify-center">
@@ -2404,10 +2421,18 @@ export default function GraficaEmbyte() {
             </div>
             </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-            <Input label="Qtd Atual" type="number" value={tempInventory.quantity} onChange={e => setTempInventory({...tempInventory, quantity: e.target.value})} />
-            <Input label="Estoque Mínimo" type="number" value={tempInventory.minStock} onChange={e => setTempInventory({...tempInventory, minStock: e.target.value})} />
-            </div>
+            {/* [MODIFICAÇÃO] Se for Terceirizado, esconde a contagem de estoque */}
+            {tempInventory.category === 'Terceirizado' ? (
+              <div className="bg-zinc-800 p-3 mb-4 rounded border border-zinc-700 text-center">
+              <p className="text-zinc-400 text-xs">Item Terceirizado / Externo</p>
+              <p className="text-white text-sm font-bold">Sem controle de estoque local</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+              <Input label="Qtd Atual" type="number" value={tempInventory.quantity} onChange={e => setTempInventory({...tempInventory, quantity: e.target.value})} />
+              <Input label="Estoque Mínimo" type="number" value={tempInventory.minStock} onChange={e => setTempInventory({...tempInventory, minStock: e.target.value})} />
+              </div>
+            )}
             <Button type="submit" variant="primary" className="w-full mt-4">Salvar Material</Button>
             </form>
         );
