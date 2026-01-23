@@ -369,8 +369,22 @@ const LoginScreen = ({ onLogin }) => {
 // --- APLICAÇÃO PRINCIPAL ---
 
 export default function GraficaEmbyte() {
-  const [user, setUser] = useState(null);
-  const [view, setView] = useState('login');
+
+  // [MODIFICAÇÃO] Inicializa buscando do localStorage se existir
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem('embyte_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  // [MODIFICAÇÃO] Define a tela inicial baseada no usuário salvo
+  const [view, setView] = useState(() => {
+    const saved = localStorage.getItem('embyte_user');
+    if (saved) {
+      const u = JSON.parse(saved);
+      return u.role === 'designer' ? 'producao' : 'financeiro'; // Ajuste 'designer' conforme sua constante ROLES se necessário
+    }
+    return 'login';
+  });
 
   // Controle de Carregamento da API e Modo de Segurança
   const [isDataLoaded, setIsDataLoaded] = useState(false);
@@ -2631,7 +2645,13 @@ export default function GraficaEmbyte() {
       return null;
     };
 
-    if (!user) return <LoginScreen onLogin={(role) => { setUser({ name: role === ROLES.ADMIN ? 'Admin Master' : role === ROLES.VENDEDOR ? 'Carlos Vendas' : 'Ana Design', role }); setView(role === ROLES.DESIGNER ? 'producao' : 'financeiro'); addLog(`Login ${role}`); }} />;
+    if (!user) return <LoginScreen onLogin={(role) => {
+      const newUser = { name: role === ROLES.ADMIN ? 'Admin Master' : role === ROLES.VENDEDOR ? 'Carlos Vendas' : 'Ana Design', role };
+      setUser(newUser);
+      localStorage.setItem('embyte_user', JSON.stringify(newUser)); // [NOVO] Salva no navegador
+      setView(role === ROLES.DESIGNER ? 'producao' : 'financeiro');
+      addLog(`Login ${role}`);
+    }} />;
 
     return (
       <div className="flex h-screen bg-zinc-950 text-zinc-200 font-sans overflow-hidden selection:bg-blue-900 selection:text-white">
@@ -2664,7 +2684,10 @@ export default function GraficaEmbyte() {
       {user.role === ROLES.ADMIN && <button onClick={() => setView('configuracoes')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'configuracoes' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><Settings size={18} /> Configurações</button>}
       </nav>
       <div className="p-4 border-t border-zinc-800">
-      <Button onClick={() => setUser(null)} variant="secondary" className="w-full flex items-center justify-center gap-2 text-xs"><LogOut size={14} /> Sair</Button>
+      <Button onClick={() => {
+        localStorage.removeItem('embyte_user'); // [NOVO] Limpa o armazenamento
+        setUser(null);
+      }} variant="secondary" className="w-full flex items-center justify-center gap-2 text-xs"><LogOut size={14} /> Sair</Button>
       </div>
       </aside>
       <main className="flex-1 overflow-auto bg-zinc-950 p-8">
