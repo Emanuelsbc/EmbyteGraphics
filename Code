@@ -87,19 +87,19 @@ const fetchData = async (key, fallbackValue) => {
 
     if (response.ok) {
       const json = await response.json();
-      
+
       // Lógica de "Desembrulhar" (Unwrap) para garantir que pegamos os dados certos
       let result = json;
       if (json.data !== undefined) result = json.data;
-      
+
       // PROTEÇÃO CRÍTICA: Se esperávamos um Array e veio null/objeto, retorna fallback
       if (Array.isArray(fallbackValue) && !Array.isArray(result)) {
-         // Tenta achar um array dentro do objeto caso a estrutura esteja aninhada
-         if (result && typeof result === 'object') {
-            const possibleArray = Object.values(result).find(v => Array.isArray(v));
-            if (possibleArray) return possibleArray;
-         }
-         return fallbackValue;
+        // Tenta achar um array dentro do objeto caso a estrutura esteja aninhada
+        if (result && typeof result === 'object') {
+          const possibleArray = Object.values(result).find(v => Array.isArray(v));
+          if (possibleArray) return possibleArray;
+        }
+        return fallbackValue;
       }
 
       // Se result for null/undefined, retorna fallback
@@ -131,7 +131,7 @@ const syncData = async (key, data) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key, data }),
-      signal: controller.signal
+                signal: controller.signal
     });
     clearTimeout(timeoutId);
     console.log(`[SISTEMA] ${key} salvo no servidor.`);
@@ -182,21 +182,21 @@ const PAYMENT_METHODS = ['Dinheiro (Gaveta)', 'Pix', 'Cartão Débito', 'Cartão
 
 const PRODUCTION_STEPS_TEMPLATE = [
   { id: 'files', label: 'Arquivos Conferidos', done: false },
-  { id: 'print', label: 'Impressão Realizada', done: false },
-  { id: 'cut', label: 'Corte / Refile', done: false },
-  { id: 'finish', label: 'Acabamento Final', done: false },
-  { id: 'qc', label: 'Controle de Qualidade', done: false }
+{ id: 'print', label: 'Impressão Realizada', done: false },
+{ id: 'cut', label: 'Corte / Refile', done: false },
+{ id: 'finish', label: 'Acabamento Final', done: false },
+{ id: 'qc', label: 'Controle de Qualidade', done: false }
 ];
 
 // --- HELPERS DE FORMATAÇÃO ---
 
 const formatCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
 const formatDate = (dateString) => {
-    if (!dateString) return '-';
-    // Corrige problema de timezone considerando a string como data local
-    const parts = dateString.split('-');
-    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    return new Date(dateString).toLocaleDateString('pt-BR');
+  if (!dateString) return '-';
+  // Corrige problema de timezone considerando a string como data local
+  const parts = dateString.split('-');
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return new Date(dateString).toLocaleDateString('pt-BR');
 };
 const formatDateTime = (dateString) => new Date(dateString).toLocaleString('pt-BR');
 
@@ -459,15 +459,15 @@ export default function GraficaEmbyte() {
           loadedSettings
         ] = await Promise.all([
           fetchData('embyte_orders', INITIAL_ORDERS),
-          fetchData('embyte_inventory', INITIAL_INVENTORY),
-          fetchData('embyte_services', INITIAL_SERVICES),
-          fetchData('embyte_clients', INITIAL_CLIENTS),
-          fetchData('embyte_logs', INITIAL_LOGS),
-          fetchData('embyte_transactions', INITIAL_TRANSACTIONS),
-          fetchData('embyte_bills', INITIAL_BILLS),
-          fetchData('embyte_closings', INITIAL_CLOSINGS),
-          fetchData('embyte_cash_status', INITIAL_CASH_STATUS),
-          fetchData('embyte_settings', INITIAL_SETTINGS)
+                              fetchData('embyte_inventory', INITIAL_INVENTORY),
+                              fetchData('embyte_services', INITIAL_SERVICES),
+                              fetchData('embyte_clients', INITIAL_CLIENTS),
+                              fetchData('embyte_logs', INITIAL_LOGS),
+                              fetchData('embyte_transactions', INITIAL_TRANSACTIONS),
+                              fetchData('embyte_bills', INITIAL_BILLS),
+                              fetchData('embyte_closings', INITIAL_CLOSINGS),
+                              fetchData('embyte_cash_status', INITIAL_CASH_STATUS),
+                              fetchData('embyte_settings', INITIAL_SETTINGS)
         ]);
 
         // PROTEÇÃO: Garante que sejam arrays para evitar .map() crash
@@ -479,11 +479,11 @@ export default function GraficaEmbyte() {
         setTransactions(Array.isArray(loadedTransactions) ? loadedTransactions : []);
         setBills(Array.isArray(loadedBills) ? loadedBills : []);
         setCashClosings(Array.isArray(loadedClosings) ? loadedClosings : []);
-        
+
         setCashStatus(loadedCashStatus || INITIAL_CASH_STATUS);
         setSettings(prev => ({ ...prev, ...loadedSettings }));
 
-        setIsDataLoaded(true); 
+        setIsDataLoaded(true);
         console.log("Sistema: Dados carregados e validados.");
       } catch (e) {
         console.warn("Erro ao carregar dados. Usando padrão.", e);
@@ -662,7 +662,7 @@ export default function GraficaEmbyte() {
         value: val,
         date: new Date().toISOString().split('T')[0],
         category: tempTransaction.category,
-        method: tempTransaction.method 
+        method: tempTransaction.method
       };
       setTransactions([newTrans, ...transactions]);
       addLog(`Lançamento manual Caixa: ${tempTransaction.type} ${val} (${tempTransaction.method})`);
@@ -891,7 +891,7 @@ export default function GraficaEmbyte() {
         serviceName: product.name,
         description: `Produto/Revenda: ${product.name}`,
         finalPrice: finalPrice,
-        totalCost: totalCost, 
+        totalCost: totalCost,
         stockId: product.id,
         quantity: parseInt(quantity),
         unitPrice: parseFloat(unitPrice),
@@ -981,7 +981,7 @@ export default function GraficaEmbyte() {
         minValue: minValue,
         payValue: minValue,
         type: type,
-        method: 'Pix' 
+        method: 'Pix'
       });
       setModalType('payment');
       setModalOpen(true);
@@ -1064,7 +1064,7 @@ export default function GraficaEmbyte() {
         value: val,
         date: new Date().toISOString().split('T')[0],
         category: 'Recebimento Pedido',
-        method: paymentData.method 
+        method: paymentData.method
       };
       setTransactions([newTransaction, ...transactions]);
 
@@ -1201,8 +1201,8 @@ export default function GraficaEmbyte() {
         headers = ['Data', 'Descrição', 'Categoria', 'Tipo', 'Valor'];
 
         const data = transactions.filter(t => {
-            if (!t.date) return false;
-            return t.date >= startDate && t.date <= endDate;
+          if (!t.date) return false;
+          return t.date >= startDate && t.date <= endDate;
         });
 
         rows = data.map(t => [
@@ -1772,7 +1772,7 @@ export default function GraficaEmbyte() {
             setProductSaleData({
               ...productSaleData,
               inventoryId: id,
-              unitPrice: item ? (item.sellPrice || item.price) : '' 
+              unitPrice: item ? (item.sellPrice || item.price) : ''
             })
           }}
           >
