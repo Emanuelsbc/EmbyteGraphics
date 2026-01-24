@@ -430,6 +430,7 @@ export default function GraficaEmbyte() {
   const [tempBill, setTempBill] = useState({ description: '', value: '', dueDate: '', category: 'Fornecedores', obs: '' });
   const [paymentData, setPaymentData] = useState({ orderId: null, totalValue: 0, minValue: 0, payValue: 0, type: 'signal', method: 'Pix' });
   const [openingValue, setOpeningValue] = useState('');
+  const [tempDeliveryDate, setTempDeliveryDate] = useState('');
   const [productionNote, setProductionNote] = useState('');
 
   // Estados de Calculadora
@@ -443,8 +444,7 @@ export default function GraficaEmbyte() {
   const [calcResult, setCalcResult] = useState(null);
   const [editingOrderId, setEditingOrderId] = useState(null);
   const [selectedClientId, setSelectedClientId] = useState('');
-
-  // --- EFEITOS (CARREGAMENTO E SINCRONIZAÇÃO) ---
+  // ... outros estados ...
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -928,13 +928,28 @@ export default function GraficaEmbyte() {
       setCart(cart.filter(item => item._id !== itemId));
     };
 
+    // [MODIFICADO] Apenas abre o modal de confirmação ao clicar em "Fechar Orçamento"
     const handleCreateOrder = () => {
       if (cart.length === 0) { showToast("Adicione itens ao pedido primeiro.", "error"); return; }
 
-      // CORREÇÃO: Garante que o cliente seja encontrado mesmo se selectedClientId for string ou number
       const client = clients.find(c => c.id == selectedClientId);
       if (!client) { showToast("Selecione um cliente cadastrado.", "error"); return; }
 
+      // Define uma data padrão (ex: amanhã às 18:00) para facilitar o preenchimento
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(18, 0, 0, 0);
+      setTempDeliveryDate(tomorrow.toISOString().slice(0, 16));
+
+      setModalType('confirmOrder'); // Abre a janela de data
+      setModalOpen(true);
+    };
+
+    // [NOVO] Função que realmente cria o pedido após escolher a data e clicar em "Confirmar"
+    const confirmCreateOrder = (e) => {
+      e.preventDefault();
+
+      const client = clients.find(c => c.id == selectedClientId);
       const totalValue = cart.reduce((acc, item) => acc + item.finalPrice, 0);
       const totalCost = cart.reduce((acc, item) => acc + (item.totalCost || 0), 0);
       const descSummary = cart.length === 1 ? cart[0].description : `${cart.length} itens (Ver detalhes)`;
@@ -946,7 +961,8 @@ export default function GraficaEmbyte() {
         value: totalValue,
         discount: 0,
         cost: totalCost,
-        deliveryTime: 'A combinar',
+        deliveryDate: tempDeliveryDate, // Salva a data para cálculo da cor
+        deliveryTime: new Date(tempDeliveryDate).toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}),
         status: 'orcamento',
         date: timestamp.split('T')[0],
         paid: false,
@@ -968,6 +984,7 @@ export default function GraficaEmbyte() {
 
       setCart([]);
       setSelectedClientId('');
+      setModalOpen(false); // Fecha o modal
     };
 
     const handleEditOrder = (order) => {
@@ -2099,37 +2116,82 @@ export default function GraficaEmbyte() {
 
     const ProducaoView = () => {
       const productionOrders = orders.filter(o => ['producao', 'acabamento'].includes(o.status));
+
+      // Função auxiliar para calcular urgência
+      const getUrgencyColor = (deliveryDate) => {
+        if (!deliveryDate) return "border-blue-600"; // Padrão se não tiver data
+
+        const now = new Date();
+        const delivery = new Date(deliveryDate);
+        const diffInMs = delivery - now;
+        const diffInHours = diffInMs / (1000 * 60 * 60);
+
+        if (diffInHours < 24) return "border-red-600 shadow-red-900/20"; // Menos de 24h (Crítico)
+        if (diffInHours < 48) return "border-orange-500 shadow-orange-900/20"; // Menos de 48h (Atenção)
+        return "border-emerald-500 shadow-emerald-900/20"; // Mais de 48h (Tranquilo)
+      };
+
+      const getUrgencyLabel = (deliveryDate) => {
+        if (!deliveryDate) return null;
+        const now = new Date();
+        const delivery = new Date(deliveryDate);
+        const diffInMs = delivery - now;
+        const diffInHours = diffInMs / (1000 * 60 * 60);
+
+        // Se já passou do prazo
+        if (diffInHours < 0) return <span className="text-red-500 font-bold text-xs animate-pulse">ATRASADO</span>;
+
+        const days = Math.floor(diffInHours / 24);
+        const hours = Math.floor(diffInHours % 24);
+
+        if (days > 0) return <span className="text-zinc-400 text-xs">{days}d {hours}h restantes</span>;
+        return <span className="text-red-400 font-bold text-xs">{hours}h restantes</span>;
+      };
+
       return (
         <div className="space-y-6 animate-in fade-in duration-300">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {productionOrders.length === 0 ? <div className="col-span-3 text-center py-20 border border-dashed border-zinc-800 text-zinc-600 uppercase tracking-widest">Fila de Produção Vazia</div> : productionOrders.map(order => (
-          <div key={order.id} className="bg-zinc-900 border-l-4 border-blue-600 p-6 shadow-lg group relative">
-          <div className="flex justify-between items-start mb-4">
-          <span className="bg-zinc-950 font-mono text-blue-500 px-2 py-1 text-sm font-bold border border-zinc-800">OP #{order.id}</span>
-          <Badge status={order.status} />
-          </div>
-          <h3 className="text-xl font-bold text-white mb-2">{order.client}</h3>
-          <p className="text-zinc-400 text-sm mb-6 border-b border-zinc-800 pb-4">{order.description}</p>
-
-          <div className="flex gap-2 mb-2">
-          <Button variant="secondary" className="flex-1" onClick={() => handlePrintOP(order)} title="Imprimir PDF"><Printer size={16}/></Button>
-          <Button variant="whatsapp" className="flex-1" onClick={() => sendWhatsApp(order, 'andamento')} title="Notificar Andamento"><Send size={16} className="mr-2"/> Status</Button>
-          </div>
-
-          <div className="flex gap-2">
-          {order.status === 'producao' ? (
-            <Button variant="primary" className="flex-1 w-full" onClick={() => { setOrders(orders.map(o => o.id === order.id ? {...o, status: 'acabamento'} : o)); showToast("Atualizado!"); }}>Acabamento &gt;</Button>
-          ) : (
-            <div className="flex gap-1 flex-1 w-full">
-            <Button variant="success" className="flex-1" onClick={() => { setOrders(orders.map(o => o.id === order.id ? {...o, status: 'concluido'} : o)); showToast("Finalizado!"); }}>Concluir</Button>
-            <Button variant="whatsapp" onClick={() => sendWhatsApp(order, 'pronto')} title="Avisar Cliente"><MessageCircle size={16}/></Button>
+        {productionOrders.length === 0 ?
+          <div className="col-span-3 text-center py-20 border border-dashed border-zinc-800 text-zinc-600 uppercase tracking-widest">Fila de Produção Vazia</div>
+          : productionOrders.map(order => (
+            // [MODIFICADO] Aplica a cor dinâmica na borda
+            <div key={order.id} className={`bg-zinc-900 border-l-4 p-6 shadow-lg group relative ${getUrgencyColor(order.deliveryDate)}`}>
+            <div className="flex justify-between items-start mb-4">
+            <div className="flex flex-col">
+            <span className="bg-zinc-950 font-mono text-zinc-400 px-2 py-1 text-sm font-bold border border-zinc-800 w-fit">OP #{order.id}</span>
+            {/* Exibe o tempo restante */}
+            <div className="mt-1">{getUrgencyLabel(order.deliveryDate)}</div>
             </div>
-          )}
+            <Badge status={order.status} />
+            </div>
+
+            <h3 className="text-xl font-bold text-white mb-1">{order.client}</h3>
+            {/* Mostra a data de entrega formatada */}
+            <p className="text-xs text-zinc-500 mb-2 flex items-center gap-1">
+            <Clock size={12}/> Entrega: {order.deliveryTime || 'A combinar'}
+            </p>
+
+            <p className="text-zinc-400 text-sm mb-6 border-b border-zinc-800 pb-4">{order.description}</p>
+
+            <div className="flex gap-2 mb-2">
+            <Button variant="secondary" className="flex-1" onClick={() => handlePrintOP(order)} title="Imprimir PDF"><Printer size={16}/></Button>
+            <Button variant="whatsapp" className="flex-1" onClick={() => sendWhatsApp(order, 'andamento')} title="Notificar Andamento"><Send size={16} className="mr-2"/> Status</Button>
+            </div>
+
+            <div className="flex gap-2">
+            {order.status === 'producao' ? (
+              <Button variant="primary" className="flex-1 w-full" onClick={() => { setOrders(orders.map(o => o.id === order.id ? {...o, status: 'acabamento'} : o)); showToast("Atualizado!"); }}>Acabamento &gt;</Button>
+            ) : (
+              <div className="flex gap-1 flex-1 w-full">
+              <Button variant="success" className="flex-1" onClick={() => { setOrders(orders.map(o => o.id === order.id ? {...o, status: 'concluido'} : o)); showToast("Finalizado!"); }}>Concluir</Button>
+              <Button variant="whatsapp" onClick={() => sendWhatsApp(order, 'pronto')} title="Avisar Cliente"><MessageCircle size={16}/></Button>
+              </div>
+            )}
+            </div>
+            </div>
+          ))}
           </div>
           </div>
-        ))}
-        </div>
-        </div>
       );
     };
 
@@ -2339,6 +2401,30 @@ export default function GraficaEmbyte() {
           <Input label="Contato (WhatsApp)" value={tempClient.contact} onChange={e => setTempClient({...tempClient, contact: e.target.value})} placeholder="11999999999" />
           <Input label="Email" value={tempClient.email} onChange={e => setTempClient({...tempClient, email: e.target.value})} />
           <Button type="submit" variant="primary" className="w-full mt-4">Salvar Cadastro</Button>
+          </form>
+        );
+      }
+      // ... dentro de renderModalContent ...
+
+      if (modalType === 'confirmOrder') {
+        return (
+          <form onSubmit={confirmCreateOrder}>
+          <div className="bg-zinc-950 p-4 border border-zinc-800 mb-4">
+          <p className="text-xs uppercase text-zinc-500">Agendamento de Entrega</p>
+          <p className="text-zinc-300 text-sm">Defina o prazo limite para a produção deste pedido.</p>
+          </div>
+
+          <Input
+          label="Data e Hora de Entrega"
+          type="datetime-local"
+          value={tempDeliveryDate}
+          onChange={e => setTempDeliveryDate(e.target.value)}
+          required
+          />
+
+          <Button type="submit" variant="success" className="w-full mt-4">
+          <CheckCircle className="w-4 h-4 mr-2"/> Confirmar e Gerar Pedido
+          </Button>
           </form>
         );
       }
