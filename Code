@@ -181,12 +181,19 @@ const CATEGORIES = ['Papel', 'Mídia', 'Tinta', 'Acabamento', 'Eletrônicos/Prod
 const EXPENSE_CATEGORIES = ['Salários', 'Fornecedores', 'Aluguel/Energia/Net', 'Manutenção', 'Impostos', 'Outros'];
 const PAYMENT_METHODS = ['Dinheiro (Gaveta)', 'Pix', 'Cartão Débito', 'Cartão Crédito', 'Transferência'];
 
+// [MODIFICADO] Workflow Completo: Design -> Produção -> Acabamento -> Final
+// [MODIFICADO] Workflow profissional de gráfica (8 Etapas)
 const PRODUCTION_STEPS_TEMPLATE = [
-  { id: 'files', label: 'Arquivos Conferidos', done: false },
-{ id: 'print', label: 'Impressão Realizada', done: false },
-{ id: 'cut', label: 'Corte / Refile', done: false },
-{ id: 'finish', label: 'Acabamento Final', done: false },
-{ id: 'qc', label: 'Controle de Qualidade', done: false }
+  // FASE 1: PRODUÇÃO
+  { id: 'prepress', label: '1. Pré-Impressão (Arq/Sangria)', done: false, type: 'prod' },
+  { id: 'rip', label: '2. RIP / Preparação de Máquina', done: false, type: 'prod' },
+{ id: 'print', label: '3. Impressão Rodando', done: false, type: 'prod' },
+{ id: 'dry', label: '4. Secagem / Cura da Tinta', done: false, type: 'prod' },
+// FASE 2: ACABAMENTO
+{ id: 'cut', label: '5. Corte / Refile Final', done: false, type: 'acab' },
+{ id: 'finish', label: '6. Acabamentos (Laminação/Dobra)', done: false, type: 'acab' },
+{ id: 'qc', label: '7. Controle de Qualidade', done: false, type: 'acab' },
+{ id: 'pack', label: '8. Embalagem e Etiquetagem', done: false, type: 'acab' }
 ];
 
 // --- HELPERS DE FORMATAÇÃO ---
@@ -431,6 +438,9 @@ export default function GraficaEmbyte() {
   const [paymentData, setPaymentData] = useState({ orderId: null, totalValue: 0, minValue: 0, payValue: 0, type: 'signal', method: 'Pix' });
   const [openingValue, setOpeningValue] = useState('');
   const [tempDeliveryDate, setTempDeliveryDate] = useState('');
+  // Variáveis de controle da Produção
+  const [prodFilter, setProdFilter] = useState('all');
+  const [expandedOP, setExpandedOP] = useState(null);
   const [productionNote, setProductionNote] = useState('');
 
   // Estados de Calculadora
@@ -2115,83 +2125,205 @@ export default function GraficaEmbyte() {
     };
 
     const ProducaoView = () => {
-      const productionOrders = orders.filter(o => ['producao', 'acabamento'].includes(o.status));
+      // Filtra apenas ordens ativas na produção
+      const activeOrders = orders.filter(o => ['producao', 'acabamento'].includes(o.status));
 
-      // Função auxiliar para calcular urgência
+      // Função de cor de urgência
       const getUrgencyColor = (deliveryDate) => {
-        if (!deliveryDate) return "border-blue-600"; // Padrão se não tiver data
-
+        if (!deliveryDate) return "border-l-zinc-600";
         const now = new Date();
         const delivery = new Date(deliveryDate);
-        const diffInMs = delivery - now;
-        const diffInHours = diffInMs / (1000 * 60 * 60);
+        const diffInHours = (delivery - now) / (1000 * 60 * 60);
 
-        if (diffInHours < 24) return "border-red-600 shadow-red-900/20"; // Menos de 24h (Crítico)
-        if (diffInHours < 48) return "border-orange-500 shadow-orange-900/20"; // Menos de 48h (Atenção)
-        return "border-emerald-500 shadow-emerald-900/20"; // Mais de 48h (Tranquilo)
+        if (diffInHours < 0) return "border-l-zinc-500 bg-red-900/10"; // Atrasado
+        if (diffInHours < 24) return "border-l-red-500"; // Crítico
+        if (diffInHours < 48) return "border-l-orange-500"; // Atenção
+        return "border-l-emerald-500"; // Tranquilo
       };
 
-      const getUrgencyLabel = (deliveryDate) => {
-        if (!deliveryDate) return null;
-        const now = new Date();
-        const delivery = new Date(deliveryDate);
-        const diffInMs = delivery - now;
-        const diffInHours = diffInMs / (1000 * 60 * 60);
+      // Lógica de Ordenação e Filtro usando as variáveis do topo (prodFilter)
+      const filteredList = activeOrders
+      .filter(o => prodFilter === 'all' || o.status === prodFilter)
+      .sort((a, b) => {
+        if (!a.deliveryDate) return 1;
+        if (!b.deliveryDate) return -1;
+        return new Date(a.deliveryDate) - new Date(b.deliveryDate);
+      });
 
-        // Se já passou do prazo
-        if (diffInHours < 0) return <span className="text-red-500 font-bold text-xs animate-pulse">ATRASADO</span>;
+      // Métricas
+      const countCritical = activeOrders.filter(o => getUrgencyColor(o.deliveryDate).includes('red')).length;
+      const countProduction = activeOrders.filter(o => o.status === 'producao').length;
+      const countFinishing = activeOrders.filter(o => o.status === 'acabamento').length;
 
-        const days = Math.floor(diffInHours / 24);
-        const hours = Math.floor(diffInHours % 24);
-
-        if (days > 0) return <span className="text-zinc-400 text-xs">{days}d {hours}h restantes</span>;
-        return <span className="text-red-400 font-bold text-xs">{hours}h restantes</span>;
+      const getProgress = (order) => {
+        const steps = order.productionSteps || [];
+        if (steps.length === 0) return 0;
+        const done = steps.filter(s => s.done).length;
+        return Math.round((done / steps.length) * 100);
       };
 
       return (
         <div className="space-y-6 animate-in fade-in duration-300">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {productionOrders.length === 0 ?
-          <div className="col-span-3 text-center py-20 border border-dashed border-zinc-800 text-zinc-600 uppercase tracking-widest">Fila de Produção Vazia</div>
-          : productionOrders.map(order => (
-            // [MODIFICADO] Aplica a cor dinâmica na borda
-            <div key={order.id} className={`bg-zinc-900 border-l-4 p-6 shadow-lg group relative ${getUrgencyColor(order.deliveryDate)}`}>
-            <div className="flex justify-between items-start mb-4">
-            <div className="flex flex-col">
-            <span className="bg-zinc-950 font-mono text-zinc-400 px-2 py-1 text-sm font-bold border border-zinc-800 w-fit">OP #{order.id}</span>
-            {/* Exibe o tempo restante */}
-            <div className="mt-1">{getUrgencyLabel(order.deliveryDate)}</div>
+
+        {/* 1. DASHBOARD DE MÉTRICAS */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-zinc-900 border border-zinc-800 p-4 flex items-center gap-3">
+        <div className="p-3 bg-blue-900/20 rounded text-blue-400"><ListPlus size={20}/></div>
+        <div><p className="text-2xl font-bold text-white">{activeOrders.length}</p><p className="text-xs text-zinc-500 uppercase">Total na Fila</p></div>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 p-4 flex items-center gap-3">
+        <div className="p-3 bg-red-900/20 rounded text-red-400"><AlertCircle size={20}/></div>
+        <div><p className="text-2xl font-bold text-white">{countCritical}</p><p className="text-xs text-zinc-500 uppercase">Urgentes/Atrasados</p></div>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 p-4 flex items-center gap-3">
+        <div className="p-3 bg-zinc-800 rounded text-zinc-400"><Printer size={20}/></div>
+        <div><p className="text-2xl font-bold text-white">{countProduction}</p><p className="text-xs text-zinc-500 uppercase">Em Impressão</p></div>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 p-4 flex items-center gap-3">
+        <div className="p-3 bg-purple-900/20 rounded text-purple-400"><Scissors size={20}/></div>
+        <div><p className="text-2xl font-bold text-white">{countFinishing}</p><p className="text-xs text-zinc-500 uppercase">Em Acabamento</p></div>
+        </div>
+        </div>
+
+        {/* 2. BARRA DE CONTROLE E FILTROS */}
+        <div className="flex flex-col md:flex-row justify-between items-center bg-zinc-900 border border-zinc-800 p-1">
+        <div className="flex">
+        <button onClick={() => setProdFilter('all')} className={`px-4 py-2 text-sm font-bold uppercase transition-colors ${prodFilter === 'all' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}>Todos</button>
+        <button onClick={() => setProdFilter('producao')} className={`px-4 py-2 text-sm font-bold uppercase transition-colors ${prodFilter === 'producao' ? 'bg-zinc-800 text-blue-400' : 'text-zinc-500 hover:text-zinc-300'}`}>Impressão</button>
+        <button onClick={() => setProdFilter('acabamento')} className={`px-4 py-2 text-sm font-bold uppercase transition-colors ${prodFilter === 'acabamento' ? 'bg-zinc-800 text-purple-400' : 'text-zinc-500 hover:text-zinc-300'}`}>Acabamento</button>
+        </div>
+        <div className="px-4 py-2 text-xs text-zinc-500 font-mono hidden md:block">
+        Ordenado por: <span className="text-emerald-500">Prioridade de Entrega</span>
+        </div>
+        </div>
+
+        {/* 3. LISTA DE TRABALHOS */}
+        <div className="space-y-2">
+        {filteredList.length === 0 ? (
+          <div className="p-10 text-center border-2 border-dashed border-zinc-800 text-zinc-600 uppercase tracking-widest">
+          Nenhum trabalho nesta etapa
+          </div>
+        ) : filteredList.map(order => {
+          const progress = getProgress(order);
+          const isExpanded = expandedOP === order.id;
+
+          return (
+            <div key={order.id} className={`bg-zinc-900 border border-zinc-800 border-l-4 transition-all duration-200 ${getUrgencyColor(order.deliveryDate)}`}>
+
+            {/* CABEÇALHO DO ITEM */}
+            <div
+            className="p-4 flex flex-col md:flex-row items-center gap-4 cursor-pointer hover:bg-zinc-800/50"
+            onClick={() => setExpandedOP(isExpanded ? null : order.id)}
+            >
+            <div className="flex items-center gap-4 flex-1 w-full">
+            <div className="flex flex-col items-center justify-center w-12 text-center">
+            <span className="text-[10px] uppercase text-zinc-500 font-bold">OP</span>
+            <span className="text-sm font-mono font-bold text-white">#{order.id}</span>
             </div>
+            <div className="flex flex-col flex-1">
+            <div className="flex items-center gap-2 mb-1">
+            <h3 className="font-bold text-white text-lg">{order.client}</h3>
             <Badge status={order.status} />
             </div>
-
-            <h3 className="text-xl font-bold text-white mb-1">{order.client}</h3>
-            {/* Mostra a data de entrega formatada */}
-            <p className="text-xs text-zinc-500 mb-2 flex items-center gap-1">
-            <Clock size={12}/> Entrega: {order.deliveryTime || 'A combinar'}
-            </p>
-
-            <p className="text-zinc-400 text-sm mb-6 border-b border-zinc-800 pb-4">{order.description}</p>
-
-            <div className="flex gap-2 mb-2">
-            <Button variant="secondary" className="flex-1" onClick={() => handlePrintOP(order)} title="Imprimir PDF"><Printer size={16}/></Button>
-            <Button variant="whatsapp" className="flex-1" onClick={() => sendWhatsApp(order, 'andamento')} title="Notificar Andamento"><Send size={16} className="mr-2"/> Status</Button>
+            <p className="text-xs text-zinc-400 truncate max-w-md">{order.description}</p>
+            </div>
             </div>
 
-            <div className="flex gap-2">
-            {order.status === 'producao' ? (
-              <Button variant="primary" className="flex-1 w-full" onClick={() => { setOrders(orders.map(o => o.id === order.id ? {...o, status: 'acabamento'} : o)); showToast("Atualizado!"); }}>Acabamento &gt;</Button>
-            ) : (
-              <div className="flex gap-1 flex-1 w-full">
-              <Button variant="success" className="flex-1" onClick={() => { setOrders(orders.map(o => o.id === order.id ? {...o, status: 'concluido'} : o)); showToast("Finalizado!"); }}>Concluir</Button>
-              <Button variant="whatsapp" onClick={() => sendWhatsApp(order, 'pronto')} title="Avisar Cliente"><MessageCircle size={16}/></Button>
+            {/* Progresso Mini */}
+            <div className="w-full md:w-32 flex flex-col gap-1">
+            <div className="flex justify-between text-[10px] text-zinc-500 uppercase font-bold">
+            <span>Progresso</span>
+            <span>{progress}%</span>
+            </div>
+            <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+            <div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${progress}%` }}></div>
+            </div>
+            </div>
+
+            {/* Data Entrega */}
+            <div className="w-full md:w-auto text-right min-w-[120px]">
+            <div className="text-[10px] text-zinc-500 uppercase font-bold">Entrega Prevista</div>
+            <div className="text-sm font-mono font-bold text-zinc-200 flex items-center justify-end gap-2">
+            <Clock size={14} className={getUrgencyColor(order.deliveryDate).includes('red') ? 'text-red-500 animate-pulse' : 'text-zinc-600'}/>
+            {order.deliveryTime || 'S/ Data'}
+            </div>
+            </div>
+
+            <div className="text-zinc-500">
+            {isExpanded ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}
+            </div>
+            </div>
+
+            {/* ÁREA EXPANDIDA */}
+            {isExpanded && (
+              <div className="border-t border-zinc-800 bg-zinc-950/50 p-6 animate-in slide-in-from-top-2">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+              {/* COLUNA 1: CHECKLIST */}
+              <div className="lg:col-span-1 border-r border-zinc-800 pr-0 lg:pr-6">
+              <h4 className="text-xs font-bold text-zinc-400 uppercase mb-4 flex items-center gap-2"><CheckSquare size={14}/> Checklist de Etapas</h4>
+              <div className="space-y-2">
+              {(order.productionSteps || PRODUCTION_STEPS_TEMPLATE).map(step => (
+                <button
+                key={step.id}
+                onClick={(e) => { e.stopPropagation(); toggleProductionStep(order.id, step.id); }}
+                className={`w-full flex items-center justify-between p-3 border text-left transition-colors ${step.done ? 'bg-emerald-900/20 border-emerald-900/50' : 'bg-zinc-900 border-zinc-800 hover:border-zinc-700'}`}
+                >
+                <span className={`text-sm ${step.done ? 'text-emerald-400 line-through decoration-emerald-900' : 'text-zinc-300'}`}>{step.label}</span>
+                {step.done ? <CheckCircle size={16} className="text-emerald-500"/> : <div className="w-4 h-4 rounded-full border border-zinc-600"></div>}
+                </button>
+              ))}
+              </div>
+              </div>
+
+              {/* COLUNA 2: HISTÓRICO */}
+              <div className="lg:col-span-1">
+              <h4 className="text-xs font-bold text-zinc-400 uppercase mb-4 flex items-center gap-2"><Activity size={14}/> Histórico Recente</h4>
+              <div className="relative border-l border-zinc-800 ml-2 pl-4 space-y-4 h-[200px] overflow-y-auto">
+              {(order.history || []).slice().reverse().map((h, i) => (
+                <div key={i} className="relative">
+                <div className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full bg-zinc-700"></div>
+                <p className="text-[10px] text-zinc-500">{formatDateTime(h.date)}</p>
+                <p className="text-sm text-zinc-300">{h.action}</p>
+                <p className="text-[10px] text-zinc-600 italic">por {h.user}</p>
+                </div>
+              ))}
+              </div>
+              </div>
+
+              {/* COLUNA 3: AÇÕES */}
+              <div className="lg:col-span-1 flex flex-col justify-between h-full">
+              <div>
+              <h4 className="text-xs font-bold text-zinc-400 uppercase mb-4 flex items-center gap-2"><Settings size={14}/> Ações do Pedido</h4>
+              <div className="grid grid-cols-1 gap-3">
+              <Button variant="secondary" onClick={() => handlePrintOP(order)} className="justify-start"><Printer size={16} className="mr-2"/> Imprimir Ordem (PDF)</Button>
+              <Button variant="whatsapp" onClick={() => sendWhatsApp(order, 'andamento')} className="justify-start"><MessageCircle size={16} className="mr-2"/> Notificar Cliente</Button>
+              <Button variant="outline" onClick={() => { setEditingItem(order); setModalType('productionManage'); setModalOpen(true); }} className="justify-start"><Edit size={16} className="mr-2"/> Editar Detalhes / Notas</Button>
+              </div>
+              </div>
+
+              <div className="mt-6 pt-6 border-t border-zinc-800">
+              <p className="text-xs text-zinc-500 uppercase mb-2">Mover Estágio</p>
+              {order.status === 'producao' ? (
+                <Button variant="primary" className="w-full py-4 shadow-lg shadow-blue-900/20" onClick={() => { setOrders(orders.map(o => o.id === order.id ? {...o, status: 'acabamento'} : o)); showToast("Movido para Acabamento"); }}>
+                <ArrowRightLeft size={18} className="mr-2"/> Mover para ACABAMENTO
+                </Button>
+              ) : (
+                <Button variant="success" className="w-full py-4 shadow-lg shadow-emerald-900/20" onClick={() => { setOrders(orders.map(o => o.id === order.id ? {...o, status: 'concluido'} : o)); showToast("Pedido Finalizado!"); }}>
+                <CheckCircle size={18} className="mr-2"/> CONCLUIR PEDIDO
+                </Button>
+              )}
+              </div>
+              </div>
+
+              </div>
               </div>
             )}
             </div>
-            </div>
-          ))}
-          </div>
-          </div>
+          );
+        })}
+        </div>
+        </div>
       );
     };
 
