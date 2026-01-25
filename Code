@@ -236,6 +236,7 @@ const Badge = ({ status }) => {
     pago: "bg-emerald-900/30 text-emerald-400 border-emerald-900",
   };
   const labels = {
+
     orcamento: "Orçamento",
     aguardando_pagamento: "Aguard. Sinal",
     producao: "Em Produção",
@@ -2190,11 +2191,14 @@ export default function GraficaEmbyte() {
         <div className="flex">
         <button onClick={() => setProdFilter('all')} className={`px-4 py-2 text-sm font-bold uppercase transition-colors ${prodFilter === 'all' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}>Todos</button>
 
+        {/* [NOVO] Botão Design */}
+        <button onClick={() => setProdFilter('design')} className={`px-4 py-2 text-sm font-bold uppercase transition-colors ${prodFilter === 'design' ? 'bg-zinc-800 text-amber-500' : 'text-zinc-500 hover:text-zinc-300'}`}>Design</button>
+
         <button onClick={() => setProdFilter('producao')} className={`px-4 py-2 text-sm font-bold uppercase transition-colors ${prodFilter === 'producao' ? 'bg-zinc-800 text-blue-400' : 'text-zinc-500 hover:text-zinc-300'}`}>Impressão</button>
 
         <button onClick={() => setProdFilter('acabamento')} className={`px-4 py-2 text-sm font-bold uppercase transition-colors ${prodFilter === 'acabamento' ? 'bg-zinc-800 text-purple-400' : 'text-zinc-500 hover:text-zinc-300'}`}>Acabamento</button>
 
-        {/* [NOVO] Botão de Finalizados */}
+        {/* Botão de Finalizados */}
         <button onClick={() => setProdFilter('concluido')} className={`px-4 py-2 text-sm font-bold uppercase transition-colors ${prodFilter === 'concluido' ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-500 hover:text-zinc-300'}`}>Finalizados</button>
         </div>
 
