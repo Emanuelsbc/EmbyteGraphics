@@ -988,9 +988,15 @@ export default function GraficaEmbyte() {
         showToast("Orçamento atualizado!");
         setEditingOrderId(null);
       } else {
-        const newOrder = { id: Math.floor(Math.random() * 10000) + 2000, ...orderData };
+        // [CORREÇÃO] Gera ID sequencial baseado no último pedido
+        // Se não tiver pedidos, começa do 2000. Se tiver, pega o maior e soma +1
+        const maxId = orders.length > 0 ? Math.max(...orders.map(o => o.id)) : 1999;
+        const nextId = maxId + 1;
+
+        const newOrder = { id: nextId, ...orderData };
+
         setOrders([newOrder, ...orders]);
-        showToast("Orçamento criado!");
+        showToast(`Orçamento #${nextId} criado!`);
       }
 
       setCart([]);
