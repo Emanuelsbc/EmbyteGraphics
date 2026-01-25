@@ -60,6 +60,10 @@ import {
   WifiOff,
   Maximize,
   Grid,
+  Headset,
+  Smartphone,
+  History,
+  SendHorizontal,
   Wifi
 } from 'lucide-react';
 
@@ -460,6 +464,8 @@ export default function GraficaEmbyte() {
   const [ignoreMargin, setIgnoreMargin] = useState(false);
   const [editingOrderId, setEditingOrderId] = useState(null);
   const [selectedClientId, setSelectedClientId] = useState('');
+  const [selectedClientForCRM, setSelectedClientForCRM] = useState(null);
+  const [customMessage, setCustomMessage] = useState('');
   // ... outros estados ...
 
   useEffect(() => {
@@ -1674,6 +1680,160 @@ export default function GraficaEmbyte() {
         </tbody>
         </table>
         </div>
+        </div>
+        </div>
+      );
+    };
+
+    // [CORRIGIDO] Função de Renderização (Sem useStates dentro)
+    const renderAtendimentoView = () => {
+      // Filtra clientes
+      const filteredClients = clients.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+      // Templates
+      // Templates (Com códigos Unicode para evitar erros de Emoji )
+      const msgTemplates = [
+        { title: "\uD83D\uDC4B Boas Vindas", text: "Ol\u00E1 *{nome}*, tudo bem? Sou Emanuel da *{empresa}* e gostaria de saber como podemos ajudar nos seus projetos gr\u00E1ficos hoje!" },
+        { title: "\uD83D\uDCCD Endereço", text: "Ol\u00E1 *{nome}*! Segue nosso endere\u00E7o:\n*{endereco}*\nEstamos aguardando sua visita!" },
+        { title: "\uD83D\uDCB0 Cobrança", text: "Oi *{nome}*, tudo bom? Passando s\u00F3 para lembrar sobre o pendente do pedido. Consegue me dar uma previs\u00E3o? Obrigado!" },
+        { title: "\uD83C\uDFA8 Arte Pronta", text: "Ol\u00E1 *{nome}*, sua arte est\u00E1 pronta para aprova\u00E7\u00E3o! \uD83C\uDFA8\nPodemos finalizar ou deseja alguma altera\u00E7\u00E3o?" },
+        { title: "\u2705 Pedido Pronto", text: "Not\u00EDcia boa *{nome}*! Seu material j\u00E1 est\u00E1 pronto e separado para retirada. \uD83D\uDCE6" },
+      ];
+
+      const handleSendTemplate = (templateText) => {
+        if (!selectedClientForCRM) return;
+
+        let text = templateText
+        .replace('{nome}', selectedClientForCRM.name.split(' ')[0])
+        .replace('{empresa}', settings.name)
+        .replace('{endereco}', settings.address);
+
+        const phone = selectedClientForCRM.contact.replace(/\D/g, '');
+        if (!phone) { showToast("Cliente sem telefone!", "error"); return; }
+
+        // [CORREÇÃO] Use 'api.whatsapp.com' em vez de 'wa.me' para corrigir os emojis no PC
+        window.open(`https://api.whatsapp.com/send?phone=55${phone}&text=${encodeURIComponent(text)}`, '_blank');
+
+        addLog(`Atendimento: Mensagem enviada para ${selectedClientForCRM.name}`);
+      };
+
+      const handleSendCustom = () => {
+        if (!customMessage.trim()) return;
+        handleSendTemplate(customMessage);
+        setCustomMessage('');
+      };
+
+      // Dados do Cliente
+      const clientOrders = selectedClientForCRM ? orders.filter(o => o.client === selectedClientForCRM.name) : [];
+      const pendingOrders = clientOrders.filter(o => o.status !== 'concluido' && o.status !== 'cancelado');
+      const debt = clientOrders.reduce((acc, o) => acc + (o.value - (o.paidAmount || 0)), 0);
+
+      return (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full animate-in fade-in duration-300">
+
+        {/* COLUNA ESQUERDA: LISTA */}
+        <div className="lg:col-span-4 bg-zinc-900 border border-zinc-800 flex flex-col h-[calc(100vh-140px)]">
+        <div className="p-4 border-b border-zinc-800 bg-zinc-950">
+        <h3 className="text-sm font-bold text-zinc-200 uppercase mb-2">Selecionar Cliente</h3>
+        <input
+        type="text"
+        placeholder="Buscar nome..."
+        value={searchTerm}
+        onChange={e => setSearchTerm(e.target.value)}
+        className="bg-zinc-900 border border-zinc-700 text-sm p-2 text-white w-full rounded-none focus:border-blue-500 outline-none"
+        />
+        </div>
+        <div className="overflow-y-auto flex-1">
+        {filteredClients.map(client => (
+          <div
+          key={client.id}
+          onClick={() => setSelectedClientForCRM(client)}
+          className={`p-4 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800/50 transition-colors ${selectedClientForCRM?.id === client.id ? 'bg-blue-900/20 border-l-4 border-l-blue-500' : ''}`}
+          >
+          <p className="font-bold text-zinc-200">{client.name}</p>
+          <div className="flex justify-between items-center mt-1">
+          <span className="text-xs text-zinc-500 flex items-center gap-1"><Smartphone size={10}/> {client.contact}</span>
+          <span className="text-xs font-mono text-emerald-600 font-bold">{formatCurrency(client.totalSpent)}</span>
+          </div>
+          </div>
+        ))}
+        </div>
+        </div>
+
+        {/* COLUNA DIREITA: DETALHES */}
+        <div className="lg:col-span-8 flex flex-col gap-6 h-[calc(100vh-140px)] overflow-y-auto pr-2">
+        {selectedClientForCRM ? (
+          <>
+          {/* INFO CLIENTE */}
+          <div className="bg-zinc-900 border border-zinc-800 p-6 shadow-lg">
+          <div className="flex justify-between items-start">
+          <div>
+          <h2 className="text-2xl font-bold text-white">{selectedClientForCRM.name}</h2>
+          <p className="text-zinc-500 text-sm mt-1">{selectedClientForCRM.email || 'Sem email cadastrado'}</p>
+          <p className="text-zinc-500 text-sm">{selectedClientForCRM.doc || 'CPF/CNPJ não informado'}</p>
+          </div>
+          <div className="text-right">
+          <p className="text-xs text-zinc-500 uppercase font-bold">Total em Aberto (Dívida)</p>
+          <p className={`text-3xl font-mono font-bold ${debt > 0 ? 'text-red-500' : 'text-emerald-500'}`}>{formatCurrency(debt)}</p>
+          </div>
+          </div>
+          </div>
+
+          {/* PEDIDOS ABERTO */}
+          {pendingOrders.length > 0 && (
+            <div className="bg-zinc-900 border border-zinc-800 p-4 border-l-4 border-l-orange-500">
+            <h3 className="text-sm font-bold text-orange-500 uppercase mb-3 flex items-center gap-2"><History size={16}/> Pedidos em Andamento</h3>
+            <div className="space-y-2">
+            {pendingOrders.map(o => (
+              <div key={o.id} className="bg-zinc-950 p-3 border border-zinc-800 flex justify-between items-center">
+              <div>
+              <span className="font-mono text-white font-bold mr-2">#{o.id}</span>
+              <span className="text-sm text-zinc-400">{o.description}</span>
+              </div>
+              <Badge status={o.status}/>
+              </div>
+            ))}
+            </div>
+            </div>
+          )}
+
+          {/* MENSAGENS */}
+          <div className="bg-zinc-900 border border-zinc-800 p-6 flex-1">
+          <h3 className="text-sm font-bold text-zinc-200 uppercase mb-4 flex items-center gap-2"><SendHorizontal size={16}/> Enviar Mensagem (WhatsApp)</h3>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
+          {msgTemplates.map((t, i) => (
+            <button
+            key={i}
+            onClick={() => handleSendTemplate(t.text)}
+            className="p-3 bg-zinc-950 border border-zinc-800 hover:border-emerald-600 hover:bg-emerald-900/10 text-left transition-all group"
+            >
+            <p className="text-xs font-bold text-zinc-300 group-hover:text-emerald-400 mb-1">{t.title}</p>
+            <p className="text-[10px] text-zinc-600 truncate">{t.text}</p>
+            </button>
+          ))}
+          </div>
+
+          <div className="flex gap-2">
+          <input
+          type="text"
+          value={customMessage}
+          onChange={e => setCustomMessage(e.target.value)}
+          placeholder="Digite uma mensagem personalizada..."
+          className="flex-1 bg-zinc-950 border border-zinc-700 text-white p-3 focus:border-emerald-500 outline-none"
+          />
+          <Button onClick={handleSendCustom} variant="whatsapp" className="px-6">
+          <SendHorizontal size={18}/>
+          </Button>
+          </div>
+          </div>
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-zinc-600 border border-dashed border-zinc-800 bg-zinc-900/50">
+          <Headset size={48} className="mb-4 opacity-20"/>
+          <p>Selecione um cliente ao lado para iniciar o atendimento</p>
+          </div>
+        )}
         </div>
         </div>
       );
@@ -3070,61 +3230,101 @@ export default function GraficaEmbyte() {
       <div className="text-xs text-zinc-500 font-mono mt-1 uppercase flex items-center gap-1"><div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>{user.name}</div>
       </div>
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+      {/* GRUPO 1: VENDAS E ATENDIMENTO (Admin e Vendedor) */}
       {(user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && (
         <>
-        <button onClick={() => setView('clientes')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'clientes' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><Users size={18} /> Clientes</button>
-        <button onClick={() => setView('vendas')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'vendas' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><ShoppingCart size={18} /> Orçamentos</button>
-        <button onClick={() => setView('caixa')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'caixa' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><Wallet size={18} /> Caixa Diário</button>
+        <button onClick={() => setView('clientes')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'clientes' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
+        <Users size={18} /> Clientes
+        </button>
+
+        {/* [NOVO] Botão Atendimento */}
+        <button onClick={() => setView('atendimento')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'atendimento' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
+        <Headset size={18} /> Atendimento
+        </button>
+
+        <button onClick={() => setView('vendas')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'vendas' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
+        <ShoppingCart size={18} /> Orçamentos
+        </button>
+
+        <button onClick={() => setView('caixa')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'caixa' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
+        <Wallet size={18} /> Caixa Diário
+        </button>
         </>
       )}
-      <button onClick={() => setView('producao')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'producao' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><Printer size={18} /> Produção</button>
+
+      {/* GRUPO 2: PRODUÇÃO (Todos) */}
+      <button onClick={() => setView('producao')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'producao' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
+      <Printer size={18} /> Produção
+      </button>
+
+      {/* GRUPO 3: ADMINISTRAÇÃO (Admin Apenas) */}
       {user.role === ROLES.ADMIN && (
         <>
-        <button onClick={() => setView('financeiro')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'financeiro' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><DollarSign size={18} /> Financeiro</button>
-        <button onClick={() => setView('relatorios')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'relatorios' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><FileBarChart size={18} /> Relatórios</button>
-        <button onClick={() => setView('precificacao')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'precificacao' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><Tag size={18} /> Precificação</button>
+        <button onClick={() => setView('financeiro')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'financeiro' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
+        <DollarSign size={18} /> Financeiro
+        </button>
+        <button onClick={() => setView('relatorios')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'relatorios' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
+        <FileBarChart size={18} /> Relatórios
+        </button>
+        <button onClick={() => setView('precificacao')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'precificacao' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
+        <Tag size={18} /> Precificação
+        </button>
         </>
       )}
-      {user.role !== ROLES.DESIGNER && <button onClick={() => setView('estoque')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'estoque' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><Package size={18} /> Estoque</button>}
-      {user.role === ROLES.ADMIN && <button onClick={() => setView('configuracoes')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'configuracoes' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><Settings size={18} /> Configurações</button>}
+
+      {/* GRUPO 4: ESTOQUE E CONFIG (Exceto Designer) */}
+      {user.role !== ROLES.DESIGNER && (
+        <button onClick={() => setView('estoque')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'estoque' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
+        <Package size={18} /> Estoque
+        </button>
+      )}
+
+      {user.role === ROLES.ADMIN && (
+        <button onClick={() => setView('configuracoes')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'configuracoes' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
+        <Settings size={18} /> Configurações
+        </button>
+      )}
       </nav>
-      <div className="p-4 border-t border-zinc-800">
-      <Button onClick={() => {
-        localStorage.removeItem('embyte_user'); // [NOVO] Limpa o armazenamento
-        setUser(null);
-      }} variant="secondary" className="w-full flex items-center justify-center gap-2 text-xs"><LogOut size={14} /> Sair</Button>
-      </div>
-      </aside>
-      <main className="flex-1 overflow-auto bg-zinc-950 p-8">
-      <header className="flex justify-between items-center mb-8 pb-4 border-b border-zinc-800">
-      <div>
-      <h1 className="text-2xl font-bold text-white uppercase tracking-tight">
-      {view === 'vendas' ? 'Vendas e Orçamentos' :
-        view === 'clientes' ? 'Gestão de Clientes' :
-        view === 'caixa' ? 'Fluxo de Caixa Diário' :
-        view === 'producao' ? 'Chão de Fábrica (OPs)' :
-        view === 'financeiro' ? 'Gestão Financeira' :
-        view === 'relatorios' ? 'Central de Relatórios' :
-        view === 'estoque' ? 'Controle de Estoque' :
-        view === 'precificacao' ? 'Catálogo de Serviços' :
-        view === 'configuracoes' ? 'Configurações' : 'Painel'}
-        </h1>
-        <p className="text-zinc-500 text-sm font-mono mt-1 flex items-center gap-2">
-        {new Date().toLocaleDateString('pt-PT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-        {isOffline && <span className="text-xs bg-red-900 text-red-200 px-2 py-0.5 rounded border border-red-700 flex items-center gap-1 font-bold animate-pulse"><WifiOff size={10}/> MODO OFFLINE (LEITURA)</span>}
-        </p>
+        <div className="p-4 border-t border-zinc-800">
+        <Button onClick={() => {
+          localStorage.removeItem('embyte_user');
+          setUser(null);
+        }} variant="secondary" className="w-full flex items-center justify-center gap-2 text-xs"><LogOut size={14} /> Sair</Button>
         </div>
-        </header>
-        {view === 'clientes' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && ClientesView()}
-        {view === 'vendas' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && VendasView()}
-        {view === 'caixa' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && CaixaView()}
-        {view === 'producao' && ProducaoView()}
-        {view === 'financeiro' && user.role === ROLES.ADMIN && FinanceiroView()}
-        {view === 'relatorios' && user.role === ROLES.ADMIN && RelatoriosView()}
-        {view === 'estoque' && user.role !== ROLES.DESIGNER && EstoqueView()}
-        {view === 'precificacao' && user.role === ROLES.ADMIN && PrecificacaoView()}
-        {view === 'configuracoes' && user.role === ROLES.ADMIN && ConfiguracoesView()}
-        </main>
-        </div>
-    );
-}
+        </aside>
+        <main className="flex-1 overflow-auto bg-zinc-950 p-8">
+        <header className="flex justify-between items-center mb-8 pb-4 border-b border-zinc-800">
+        <div>
+        <h1 className="text-2xl font-bold text-white uppercase tracking-tight">
+        {view === 'vendas' ? 'Vendas e Orçamentos' :
+          view === 'atendimento' ? 'Central de Atendimento' : // [NOVO] Título
+          view === 'clientes' ? 'Gestão de Clientes' :
+          view === 'caixa' ? 'Fluxo de Caixa Diário' :
+          view === 'producao' ? 'Chão de Fábrica (OPs)' :
+          view === 'financeiro' ? 'Gestão Financeira' :
+          view === 'relatorios' ? 'Central de Relatórios' :
+          view === 'estoque' ? 'Controle de Estoque' :
+          view === 'precificacao' ? 'Catálogo de Serviços' :
+          view === 'configuracoes' ? 'Configurações' : 'Painel'}
+          </h1>
+          <p className="text-zinc-500 text-sm font-mono mt-1 flex items-center gap-2">
+          {new Date().toLocaleDateString('pt-PT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          {isOffline && <span className="text-xs bg-red-900 text-red-200 px-2 py-0.5 rounded border border-red-700 flex items-center gap-1 font-bold animate-pulse"><WifiOff size={10}/> MODO OFFLINE (LEITURA)</span>}
+          </p>
+          </div>
+          </header>
+
+          {view === 'clientes' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && ClientesView()}
+          {view === 'atendimento' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && renderAtendimentoView()}
+          {view === 'vendas' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && VendasView()}
+          {view === 'caixa' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && CaixaView()}
+          {view === 'producao' && ProducaoView()}
+          {view === 'financeiro' && user.role === ROLES.ADMIN && FinanceiroView()}
+          {view === 'relatorios' && user.role === ROLES.ADMIN && RelatoriosView()}
+          {view === 'estoque' && user.role !== ROLES.DESIGNER && EstoqueView()}
+          {view === 'precificacao' && user.role === ROLES.ADMIN && PrecificacaoView()}
+          {view === 'configuracoes' && user.role === ROLES.ADMIN && ConfiguracoesView()}
+          </main>
+          </div>
+      );
+      }
