@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import html2pdf from 'html2pdf.js';
 import {
   ShoppingCart,
   Package,
@@ -1395,11 +1396,13 @@ export default function GraficaEmbyte() {
     };
 
     const handlePrintOP = (order) => {
-      const printWindow = window.open('', '', 'width=900,height=1100');
+      // 1. Prepara os dados (igual ao original)
       const items = order.technicalData?.items || (order.technicalData ? [order.technicalData] : []);
+
+      // 2. Define o estilo (igual ao original)
       const styles = `
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
-      body { font-family: 'Inter', sans-serif; padding: 40px; color: #1a1a1a; line-height: 1.4; font-size: 11px; }
+      body { font-family: 'Inter', sans-serif; padding: 20px; color: #1a1a1a; line-height: 1.4; font-size: 11px; background: #fff; }
       .header { display: flex; justify-content: space-between; border-bottom: 3px solid #000; padding-bottom: 20px; margin-bottom: 30px; }
       .company-title { font-size: 28px; font-weight: 900; text-transform: uppercase; letter-spacing: -1px; margin: 0; line-height: 1; }
       .company-meta { font-size: 10px; color: #555; margin-top: 5px; }
@@ -1427,17 +1430,15 @@ export default function GraficaEmbyte() {
       .sig-line { flex: 1; border-top: 1px solid #000; padding-top: 10px; text-align: center; font-size: 11px; }
       .sig-role { font-size: 9px; color: #666; text-transform: uppercase; margin-top: 2px; }
       .footer { position: fixed; bottom: 30px; left: 40px; right: 40px; text-align: center; font-size: 9px; color: #9ca3af; }
-      @media print { body { -webkit-print-color-adjust: exact; } }
       `;
 
+      // 3. Monta o HTML
       const itemsRows = items.map(item => `
       <tr>
       <td>
       <div class="item-name">${item.serviceName}</div>
       <div class="item-desc">
-      ${item.isProduct
-        ? 'Produto de Revenda'
-      : `${item.technicalParams?.itemW}x${item.technicalParams?.itemH}cm ${item.isArea ? `(${item.totalSheets} m²)` : ''} • ${item.selectedExtrasNames || 'Sem extras'}`}
+      ${item.isProduct ? 'Produto de Revenda' : `${item.technicalParams?.itemW}x${item.technicalParams?.itemH}cm ${item.isArea ? `(${item.totalSheets} m²)` : ''} • ${item.selectedExtrasNames || 'Sem extras'}`}
       </div>
       </td>
       <td class="col-center">${item.quantity || 1}</td>
@@ -1446,13 +1447,9 @@ export default function GraficaEmbyte() {
       </tr>
       `).join('');
 
-      const html = `
-      <html>
-      <head>
-      <title>Orçamento #${order.id}</title>
+      const htmlContent = `
+      <div style="padding: 20px; background: white;">
       <style>${styles}</style>
-      </head>
-      <body>
       <div class="header">
       <div>
       <h1 class="company-title">${settings.name}</h1>
@@ -1488,52 +1485,50 @@ export default function GraficaEmbyte() {
       <th width="20%" class="col-right">Total</th>
       </tr>
       </thead>
-      <tbody>
-      ${itemsRows}
-      </tbody>
+      <tbody>${itemsRows}</tbody>
       </table>
       <div class="totals-area">
       <div class="totals-box">
       <div class="total-row"><span>Subtotal</span> <span>${formatCurrency(order.value + (order.discount || 0))}</span></div>
       ${order.discount > 0 ? `<div class="total-row" style="color: #ef4444; font-weight: bold;"><span>Desconto</span> <span>- ${formatCurrency(order.discount)}</span></div>` : ''}
       <div class="total-row total-final"><span>Total</span> <span>${formatCurrency(order.value)}</span></div>
-
       <div style="margin-top: 15px; background: #eff6ff; padding: 10px; border-radius: 4px;">
       <div class="total-row" style="color: #2563eb; font-weight: 600;"><span>Valor Pago</span> <span>${formatCurrency(order.paidAmount || 0)}</span></div>
       <div class="total-row" style="color: #374151; font-weight: 600; border-bottom: none;"><span>Saldo Restante</span> <span>${formatCurrency(order.value - (order.paidAmount || 0))}</span></div>
       </div>
       </div>
       </div>
-      <div class="alert-box">
-      ⚠️ ATENÇÃO: A produção deste pedido só será iniciada após a confirmação do pagamento do sinal de 50%.
-      </div>
+      <div class="alert-box">⚠️ ATENÇÃO: A produção deste pedido só será iniciada após a confirmação do pagamento do sinal de 50%.</div>
       <div class="terms">
       <strong>Condições Comerciais:</strong>
       <ol style="margin-top: 5px; padding-left: 15px;">
       <li>A produção inicia-se apenas após a confirmação do pagamento do sinal (50%).</li>
       <li>O prazo de entrega conta a partir da aprovação final da arte e pagamento do sinal.</li>
-      <li>As cores podem ter variação de cor dependendo do material, qualidade da arte e impressão do PDF.</li>
       </ol>
       </div>
       <div class="signatures">
-      <div class="sig-line">
-      <strong>${settings.name}</strong><br/>
-      <span class="sig-role">Responsável</span>
+      <div class="sig-line"><strong>${settings.name}</strong><br/><span class="sig-role">Responsável</span></div>
+      <div class="sig-line"><strong>${order.client}</strong><br/><span class="sig-role">Cliente</span></div>
       </div>
-      <div class="sig-line">
-      <strong>${order.client}</strong><br/>
-      <span class="sig-role">Cliente</span>
+      <div class="footer">Documento gerado eletronicamente por Sistema Embyte • ${new Date().toLocaleString('pt-BR')}</div>
       </div>
-      </div>
-      <div class="footer">
-      Documento gerado eletronicamente por Sistema Embyte • ${new Date().toLocaleString('pt-BR')}
-      </div>
-      <script>window.print();</script>
-      </body>
-      </html>
       `;
-      printWindow.document.write(html);
-      printWindow.document.close();
+
+      // 4. GERA O PDF E BAIXA (SEM ABRIR JANELA)
+      showToast("Gerando PDF...");
+
+      const element = document.createElement('div');
+      element.innerHTML = htmlContent;
+
+      const opt = {
+        margin:       0,
+        filename:     `Orçamento de ${order.client.split(' ')[0]} Pedido #${order.id} de Grafica Embyte.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      html2pdf().set(opt).from(element).save();
     };
 
     const ClientesView = () => {
