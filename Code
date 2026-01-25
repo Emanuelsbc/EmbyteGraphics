@@ -2126,7 +2126,7 @@ export default function GraficaEmbyte() {
 
     const ProducaoView = () => {
       // Filtra apenas ordens ativas na produção
-      const activeOrders = orders.filter(o => ['producao', 'acabamento'].includes(o.status));
+      const activeOrders = orders.filter(o => ['producao', 'acabamento', 'concluido'].includes(o.status));
 
       // Função de cor de urgência
       const getUrgencyColor = (deliveryDate) => {
@@ -2152,9 +2152,9 @@ export default function GraficaEmbyte() {
 
       // Métricas
       const countCritical = activeOrders.filter(o => getUrgencyColor(o.deliveryDate).includes('red')).length;
-      const countProduction = activeOrders.filter(o => o.status === 'producao').length;
       const countFinishing = activeOrders.filter(o => o.status === 'acabamento').length;
-
+      const countProduction = activeOrders.filter(o => o.status === 'producao').length;
+      const countDone = activeOrders.filter(o => o.status === 'concluido').length;
       const getProgress = (order) => {
         const steps = order.productionSteps || [];
         if (steps.length === 0) return 0;
@@ -2189,13 +2189,20 @@ export default function GraficaEmbyte() {
         <div className="flex flex-col md:flex-row justify-between items-center bg-zinc-900 border border-zinc-800 p-1">
         <div className="flex">
         <button onClick={() => setProdFilter('all')} className={`px-4 py-2 text-sm font-bold uppercase transition-colors ${prodFilter === 'all' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}>Todos</button>
+
         <button onClick={() => setProdFilter('producao')} className={`px-4 py-2 text-sm font-bold uppercase transition-colors ${prodFilter === 'producao' ? 'bg-zinc-800 text-blue-400' : 'text-zinc-500 hover:text-zinc-300'}`}>Impressão</button>
+
         <button onClick={() => setProdFilter('acabamento')} className={`px-4 py-2 text-sm font-bold uppercase transition-colors ${prodFilter === 'acabamento' ? 'bg-zinc-800 text-purple-400' : 'text-zinc-500 hover:text-zinc-300'}`}>Acabamento</button>
+
+        {/* [NOVO] Botão de Finalizados */}
+        <button onClick={() => setProdFilter('concluido')} className={`px-4 py-2 text-sm font-bold uppercase transition-colors ${prodFilter === 'concluido' ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-500 hover:text-zinc-300'}`}>Finalizados</button>
         </div>
+
         <div className="px-4 py-2 text-xs text-zinc-500 font-mono hidden md:block">
         Ordenado por: <span className="text-emerald-500">Prioridade de Entrega</span>
         </div>
         </div>
+        // ...
 
         {/* 3. LISTA DE TRABALHOS */}
         <div className="space-y-2">
