@@ -1396,13 +1396,13 @@ export default function GraficaEmbyte() {
     };
 
     const handlePrintOP = (order) => {
-      // 1. Prepara os dados (igual ao original)
+      // 1. Prepara os dados
       const items = order.technicalData?.items || (order.technicalData ? [order.technicalData] : []);
 
-      // 2. Define o estilo (igual ao original)
+      // 2. Define o estilo (Removi o padding do body pois a margem será feita pelo PDF agora)
       const styles = `
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
-      body { font-family: 'Inter', sans-serif; padding: 20px; color: #1a1a1a; line-height: 1.4; font-size: 11px; background: #fff; }
+      body { font-family: 'Inter', sans-serif; color: #1a1a1a; line-height: 1.4; font-size: 11px; background: #fff; }
       .header { display: flex; justify-content: space-between; border-bottom: 3px solid #000; padding-bottom: 20px; margin-bottom: 30px; }
       .company-title { font-size: 28px; font-weight: 900; text-transform: uppercase; letter-spacing: -1px; margin: 0; line-height: 1; }
       .company-meta { font-size: 10px; color: #555; margin-top: 5px; }
@@ -1429,7 +1429,7 @@ export default function GraficaEmbyte() {
       .signatures { margin-top: 60px; display: flex; justify-content: space-between; gap: 40px; page-break-inside: avoid; }
       .sig-line { flex: 1; border-top: 1px solid #000; padding-top: 10px; text-align: center; font-size: 11px; }
       .sig-role { font-size: 9px; color: #666; text-transform: uppercase; margin-top: 2px; }
-      .footer { position: fixed; bottom: 30px; left: 40px; right: 40px; text-align: center; font-size: 9px; color: #9ca3af; }
+      .footer { position: fixed; bottom: 0px; left: 0px; right: 0px; text-align: center; font-size: 9px; color: #9ca3af; }
       `;
 
       // 3. Monta o HTML
@@ -1448,7 +1448,7 @@ export default function GraficaEmbyte() {
       `).join('');
 
       const htmlContent = `
-      <div style="padding: 20px; background: white;">
+      <div style="background: white;">
       <style>${styles}</style>
       <div class="header">
       <div>
@@ -1514,17 +1514,17 @@ export default function GraficaEmbyte() {
       </div>
       `;
 
-      // 4. GERA O PDF E BAIXA (SEM ABRIR JANELA)
+      // 4. GERA O PDF E BAIXA
       showToast("Gerando PDF...");
 
       const element = document.createElement('div');
       element.innerHTML = htmlContent;
 
       const opt = {
-        margin:       0,
-        filename:     `Orçamento de ${order.client.split(' ')[0]} Pedido #${order.id} de Grafica Embyte.pdf`,
+        margin:       10,  // [MODIFICADO] Margem de 10mm (1cm) em todos os lados
+        filename:     `Orçamento de ${order.client.split(' ')[0]} Pedido # ${order.id} de Grafica Embyte.pdf`,
         image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true },
+        html2canvas:  { scale: 2, useCORS: true, letterRendering: true }, // [MODIFICADO] Melhora o render
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
