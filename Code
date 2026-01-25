@@ -454,8 +454,10 @@ export default function GraficaEmbyte() {
   const [productSaleData, setProductSaleData] = useState({
     inventoryId: '', quantity: '', unitPrice: ''
   });
-
   const [calcResult, setCalcResult] = useState(null);
+
+  // [NOVO] Controle para ignorar margens no cálculo
+  const [ignoreMargin, setIgnoreMargin] = useState(false);
   const [editingOrderId, setEditingOrderId] = useState(null);
   const [selectedClientId, setSelectedClientId] = useState('');
   // ... outros estados ...
@@ -620,6 +622,7 @@ export default function GraficaEmbyte() {
     else if (type === 'transaction') setTempTransaction({ type: 'in', description: '', value: 0, category: 'Vendas', method: 'Dinheiro (Gaveta)' });
     else if (type === 'bill') setTempBill(item || { description: '', value: '', dueDate: '', category: 'Fornecedores', obs: '' });
     else if (type === 'productionManage') setProductionNote('');
+    else if (type === 'service') setTempService(item || { name: '', w: '', h: '', basePrice: '', extras: [], stockId: '', pricingType: 'sheet', margin: 0 }); // [ADICIONADO margin: 0]
     setModalOpen(true);
   };
 
@@ -678,9 +681,21 @@ export default function GraficaEmbyte() {
       setInventory(inventory.map(i => i.id === editingItem.id ? { ...i, quantity: newQty } : i));
       addLog(`Movimentação: ${tempMovement.type === 'in' ? '+' : '-'}${qty} em ${editingItem.name}`);
       showToast("Movimentação registrada!");
-    } else if (modalType === 'service') {
-      const itemToSave = { ...tempService, w: +tempService.w, h: +tempService.h, basePrice: +tempService.basePrice, stockId: +tempService.stockId };
-      const newList = editingItem ? services.map(p => p.id === id ? { ...itemToSave, id } : p) : [...services, { ...itemToSave, id }];
+   } else if (modalType === 'service') {
+      // [AQUI É A ALTERAÇÃO]
+      const itemToSave = {
+        ...tempService,
+        w: +tempService.w,
+        h: +tempService.h,
+        margin: +tempService.margin || 0, // <--- Esta é a linha nova
+        basePrice: +tempService.basePrice,
+        stockId: +tempService.stockId
+      };
+
+      const newList = editingItem ?
+        services.map(p => p.id === id ? { ...itemToSave, id } : p) :
+        [...services, { ...itemToSave, id }];
+
       setServices(newList);
       addLog(`Serviço ${editingItem ? 'editado' : 'criado'}: ${tempService.name}`);
     } else if (modalType === 'transaction') {
@@ -835,21 +850,30 @@ export default function GraficaEmbyte() {
         };
       }
       else {
-        const sheetW = service.w - 1;
-        const sheetH = service.h - 1;
+        // [MODIFICADO] Lógica Inteligente de Margem
+        // Se o botão "Ignorar" estiver ativo, margem é 0. Senão, usa a do cadastro ou 0.
+        const margin = ignoreMargin ? 0 : (service.margin || 0);
+
+        const sheetW = service.w - (margin * 2);
+        const sheetH = service.h - (margin * 2);
+
+        // Validação
+        if (sheetW <= 0 || sheetH <= 0) { showToast("Margem maior que o papel!", "error"); return; }
+
+        // Cálculo de aproveitamento (Reto ou Girado)
         const fitA = Math.floor(sheetW / w) * Math.floor(sheetH / h);
         const fitB = Math.floor(sheetW / h) * Math.floor(sheetH / w);
         const bestFit = Math.max(fitA, fitB);
 
-        if (bestFit === 0) { showToast("Item maior que a folha.", "error"); return; }
+        if (bestFit === 0) { showToast("Item maior que a área útil da folha.", "error"); return; }
 
         const totalSheets = Math.ceil(qty / bestFit);
         const wasteSheets = totalSheets > 10 ? Math.ceil(totalSheets * 0.10) : 0;
         const finalSheets = totalSheets + wasteSheets;
 
+        // Calcula Extras
         let extrasCostTotal = 0;
         let selectedExtrasNames = [];
-
         if (service.extras && calcData.selectedExtras) {
           service.extras.forEach(ex => {
             if (calcData.selectedExtras.includes(ex.id)) {
@@ -1798,21 +1822,55 @@ export default function GraficaEmbyte() {
 
         {saleTab === 'service' && (
           <>
-          {/* [MODIFICADO] Bloco de Medidas com Botão Xerox */}
+          {/* [INICIO DO BLOCO CORRIGIDO] */}
           <div className="flex gap-4 items-end mb-4">
+
+          {/* Coluna 1: Inputs de Largura e Altura */}
           <div className="grid grid-cols-2 gap-4 flex-1">
           <Input label="Largura (cm)" placeholder="Ex: 5" type="number" value={calcData.itemW} onChange={e => setCalcData({...calcData, itemW: e.target.value})} />
           <Input label="Altura (cm)" placeholder="Ex: 5" type="number" value={calcData.itemH} onChange={e => setCalcData({...calcData, itemH: e.target.value})} />
           </div>
+
+          {/* Coluna 2: Botões de Controle + Indicador */}
+          <div className="flex flex-col gap-2 mb-4"> {/* Adicionei mb-4 para alinhar com inputs */}
+
+          {/* Botão Folha Cheia */}
           <Button
           onClick={fillFullSheet}
           variant="secondary"
-          className="h-[42px] mb-4 text-xs px-3 border-dashed border-zinc-600 text-zinc-400 hover:text-white hover:border-white"
-          title="Usar tamanho total da folha (Xerox)"
+          className="h-[30px] text-[10px] px-2 border-dashed border-zinc-600 text-zinc-400 hover:text-white"
+          title="Usar tamanho total da folha"
           >
-          <Maximize size={18} className="mr-1"/> Folha Cheia
+          <Maximize size={14} className="mr-1"/> Folha Cheia
           </Button>
-          </div>
+
+          {/* Botão Ignorar Margens */}
+          <button
+          onClick={() => setIgnoreMargin(!ignoreMargin)}
+          className={`h-[30px] px-2 text-[10px] font-bold uppercase rounded border transition-colors flex items-center justify-center
+            ${ignoreMargin
+              ? 'bg-red-900/30 text-red-400 border-red-900 hover:bg-red-900/50'
+              : 'bg-zinc-800 text-zinc-500 border-zinc-700 hover:text-zinc-300'
+            }`}
+            title={ignoreMargin ? "Margens estão sendo IGNORADAS" : "Margens estão ATIVAS"}
+            >
+            {ignoreMargin ? <XCircle size={14} className="mr-1"/> : <CheckCircle size={14} className="mr-1"/>}
+            {ignoreMargin ? 'Ignorar Margem' : 'Usar Margem'}
+            </button>
+
+            {/* Indicador Visual da Margem (Ajustado) */}
+            <div className="text-xs text-center font-mono mt-1"> {/* Aumentei para text-xs e dei um espaço (mt-1) */}
+            {ignoreMargin ?
+              <span className="text-red-500 font-bold">MARGEM: 0 cm</span> :
+              <span className="text-zinc-500">Margem: <span className="text-zinc-300 font-bold">{selectedService?.margin || 0} cm</span></span>
+            }
+            </div>
+
+            </div> {/* Fim da Coluna 2 */}
+
+            </div> {/* Fim da div flex gap-4 (O ERRO PROVAVELMENTE ESTAVA AQUI) */}
+
+            {/* [FIM DO BLOCO CORRIGIDO] - O código continua abaixo com os selects... */}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1 w-full">
@@ -1834,7 +1892,7 @@ export default function GraficaEmbyte() {
           className="h-[42px] mb-4 text-xs px-3 border-dashed border-zinc-600 text-zinc-400 hover:text-emerald-400 hover:border-emerald-500"
           title="Calcular quantos cabem em 1 folha"
           >
-          <Grid size={18} className="mr-1"/> 1 Folha
+          <Grid size={18} className="mr-1"/> PREENCHER
           </Button>
           </div>
           </div>
@@ -2674,12 +2732,14 @@ export default function GraficaEmbyte() {
           </select>
           </div>
           {tempService.pricingType === 'sheet' && (
-            <div className="grid grid-cols-2 gap-4">
-            <Input label="Largura Base (cm)" type="number" value={tempService.w} onChange={e => setTempService({...tempService, w: e.target.value})} />
-            <Input label="Altura Base (cm)" type="number" value={tempService.h} onChange={e => setTempService({...tempService, h: e.target.value})} />
+            // [MODIFICADO] Mudamos de grid-cols-2 para grid-cols-3 para caber a margem
+            <div className="grid grid-cols-3 gap-4">
+            <Input label="Largura Folha (cm)" type="number" value={tempService.w} onChange={e => setTempService({...tempService, w: e.target.value})} />
+            <Input label="Altura Folha (cm)" type="number" value={tempService.h} onChange={e => setTempService({...tempService, h: e.target.value})} />
+            {/* [NOVO] Campo de Margem */}
+            <Input label="Margem/Pinça (cm)" type="number" value={tempService.margin} onChange={e => setTempService({...tempService, margin: e.target.value})} placeholder="0.5" />
             </div>
           )}
-          <Input label={tempService.pricingType === 'area' ? "Preço por m² (R$)" : "Preço Base (por folha)"} type="number" value={tempService.basePrice} onChange={e => setTempService({...tempService, basePrice: e.target.value})} />
           <div className="flex flex-col gap-1 mb-4 w-full">
           <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider">Material Estoque Vinculado</label>
           <select className="bg-zinc-950 border border-zinc-700 text-zinc-200 p-2 rounded-none focus:border-blue-700 focus:outline-none placeholder-zinc-700 font-mono text-sm w-full" value={tempService.stockId || ''} onChange={e => setTempService({...tempService, stockId: parseInt(e.target.value)})}>
