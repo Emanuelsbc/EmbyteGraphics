@@ -58,6 +58,8 @@ import {
   ShoppingBag,
   FileBarChart,
   WifiOff,
+  Maximize,
+  Grid,
   Wifi
 } from 'lucide-react';
 
@@ -885,7 +887,47 @@ export default function GraficaEmbyte() {
         discount
       });
     };
+    // [NOVO] Preenche W e H com o tamanho total do serviço selecionado (Ex: Xerox)
+    const fillFullSheet = () => {
+      const service = services.find(s => s.id == calcData.serviceId);
+      if (!service) { showToast("Selecione um serviço primeiro!", "error"); return; }
 
+      setCalcData({
+        ...calcData,
+        itemW: service.w,
+        itemH: service.h
+      });
+      showToast(`Medidas ajustadas para ${service.w}x${service.h}cm`);
+    };
+
+    // [NOVO] Calcula quantos cabem na folha e define a quantidade para "1 folha cheia"
+    const fillOneSheetQty = () => {
+      const service = services.find(s => s.id == calcData.serviceId);
+      if (!service) { showToast("Selecione o serviço.", "error"); return; }
+
+      const w = parseFloat(calcData.itemW);
+      const h = parseFloat(calcData.itemH);
+
+      if (!w || !h) { showToast("Preencha as medidas do item.", "error"); return; }
+
+      // Lógica de aproveitamento (Fit)
+      const sheetW = service.w; // Não subtrai margem aqui para cálculo bruto, ou ajuste se tiver margem de pinça
+      const sheetH = service.h;
+
+      // Opção 1: Reto
+      const fitA = Math.floor(sheetW / w) * Math.floor(sheetH / h);
+      // Opção 2: Girado
+      const fitB = Math.floor(sheetW / h) * Math.floor(sheetH / w);
+
+      const bestFit = Math.max(fitA, fitB);
+
+      if (bestFit === 0) {
+        showToast("O item é maior que a folha!", "error");
+      } else {
+        setCalcData({ ...calcData, quantity: bestFit });
+        showToast(`Cabem ${bestFit} unidades por folha. Quantidade ajustada!`);
+      }
+    };
     const addToCart = () => {
       if (!calcResult) return;
       const newItem = {
@@ -1181,7 +1223,29 @@ export default function GraficaEmbyte() {
       showToast("Caixa FECHADO e enviado ao Financeiro!");
       addLog(`Fechamento de Caixa: ${today}`);
     };
+    // ... (Logo após o fechamento da função closeCashDay)
 
+    // [NOVO] Automação: Fecha o caixa automaticamente às 23:59
+    useEffect(() => {
+      const checkAutoClose = () => {
+        const now = new Date();
+        const hours = now.getHours();
+        const minutes = now.getMinutes();
+
+        // Verifica se é 23:59 e se o caixa está ABERTO
+        if (hours === 23 && minutes === 59 && cashStatus.isOpen) {
+          console.log("⏰ Horário limite atingido. Fechando caixa automaticamente...");
+          closeCashDay();
+          showToast("Caixa fechado automaticamente (Fim do Dia)", "success");
+        }
+      };
+
+      // Cria um relógio que verifica a cada 30 segundos
+      const timer = setInterval(checkAutoClose, 30000);
+
+      // Limpa o relógio se sair da tela
+      return () => clearInterval(timer);
+    }, [cashStatus, transactions]); // Dependências para garantir dados atuais
     const handlePrintReport = (reportType, startDate, endDate) => {
       const printWindow = window.open('', '', 'width=900,height=1100');
 
@@ -1734,19 +1798,45 @@ export default function GraficaEmbyte() {
 
         {saleTab === 'service' && (
           <>
-          <div className="grid grid-cols-2 gap-4">
-          <Input label="Largura Item (cm)" placeholder="Ex: 9" type="number" value={calcData.itemW} onChange={e => setCalcData({...calcData, itemW: e.target.value})} />
-          <Input label="Altura Item (cm)" placeholder="Ex: 5" type="number" value={calcData.itemH} onChange={e => setCalcData({...calcData, itemH: e.target.value})} />
+          {/* [MODIFICADO] Bloco de Medidas com Botão Xerox */}
+          <div className="flex gap-4 items-end mb-4">
+          <div className="grid grid-cols-2 gap-4 flex-1">
+          <Input label="Largura (cm)" placeholder="Ex: 5" type="number" value={calcData.itemW} onChange={e => setCalcData({...calcData, itemW: e.target.value})} />
+          <Input label="Altura (cm)" placeholder="Ex: 5" type="number" value={calcData.itemH} onChange={e => setCalcData({...calcData, itemH: e.target.value})} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <Button
+          onClick={fillFullSheet}
+          variant="secondary"
+          className="h-[42px] mb-4 text-xs px-3 border-dashed border-zinc-600 text-zinc-400 hover:text-white hover:border-white"
+          title="Usar tamanho total da folha (Xerox)"
+          >
+          <Maximize size={18} className="mr-1"/> Folha Cheia
+          </Button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1 w-full">
           <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider mb-1">Serviço de Venda</label>
-          <select className="bg-zinc-950 border border-zinc-700 text-zinc-200 p-2 rounded-none focus:border-blue-700 focus:outline-none font-mono text-sm h-[38px] w-full" value={calcData.serviceId} onChange={e => setCalcData({...calcData, serviceId: e.target.value, selectedExtras: []})}>
+          <select className="bg-zinc-950 border border-zinc-700 text-zinc-200 p-2 rounded-none focus:border-blue-700 focus:outline-none font-mono text-sm h-[42px] w-full" value={calcData.serviceId} onChange={e => setCalcData({...calcData, serviceId: e.target.value, selectedExtras: []})}>
           <option value="">Selecione...</option>
-          {services.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          {services.map(p => <option key={p.id} value={p.id}>{p.name} ({p.w}x{p.h}cm)</option>)}
           </select>
           </div>
+
+          {/* [MODIFICADO] Quantidade com Botão de Calcular Cabimento */}
+          <div className="flex gap-2 items-end">
+          <div className="flex-1">
           <Input label="Quantidade Total" placeholder="Ex: 1000" type="number" value={calcData.quantity} onChange={e => setCalcData({...calcData, quantity: e.target.value})} />
+          </div>
+          <Button
+          onClick={fillOneSheetQty}
+          variant="secondary"
+          className="h-[42px] mb-4 text-xs px-3 border-dashed border-zinc-600 text-zinc-400 hover:text-emerald-400 hover:border-emerald-500"
+          title="Calcular quantos cabem em 1 folha"
+          >
+          <Grid size={18} className="mr-1"/> 1 Folha
+          </Button>
+          </div>
           </div>
 
           {selectedService && selectedService.extras && selectedService.extras.length > 0 && (
