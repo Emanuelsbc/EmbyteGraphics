@@ -441,6 +441,7 @@ export default function GraficaEmbyte() {
   const [tempMovement, setTempMovement] = useState({ type: 'in', quantity: 0, reason: 'Compra' });
   const [tempService, setTempService] = useState({ name: '', w: '', h: '', basePrice: '', extras: [], stockId: '', pricingType: 'sheet' });
   const [tempExtra, setTempExtra] = useState({ name: '', value: '' });
+  const [tempStockSelection, setTempStockSelection] = useState('');
   const [tempTransaction, setTempTransaction] = useState({ type: 'in', description: '', value: 0, category: 'Vendas', method: 'Dinheiro (Gaveta)' });
   const [tempBill, setTempBill] = useState({ description: '', value: '', dueDate: '', category: 'Fornecedores', obs: '' });
   const [paymentData, setPaymentData] = useState({ orderId: null, totalValue: 0, minValue: 0, payValue: 0, type: 'signal', method: 'Pix' });
@@ -621,17 +622,31 @@ export default function GraficaEmbyte() {
   const openModal = (type, item = null) => {
     setModalType(type);
     setEditingItem(item);
-    if (type === 'client') setTempClient(item || { name: '', doc: '', contact: '', email: '' });
-    else if (type === 'inventory') setTempInventory(item || { name: '', category: 'Outros', unit: '', measureType: 'unit', quantity: 0, minStock: 0, price: 0, sellPrice: 0 });
-    else if (type === 'service') setTempService(item || { name: '', w: '', h: '', basePrice: '', extras: [], stockId: '', pricingType: 'sheet' });
-    else if (type === 'movement') setTempMovement({ type: 'in', quantity: 0, reason: 'Compra' });
-    else if (type === 'transaction') setTempTransaction({ type: 'in', description: '', value: 0, category: 'Vendas', method: 'Dinheiro (Gaveta)' });
-    else if (type === 'bill') setTempBill(item || { description: '', value: '', dueDate: '', category: 'Fornecedores', obs: '' });
-    else if (type === 'productionManage') setProductionNote('');
-    else if (type === 'service') setTempService(item || { name: '', w: '', h: '', basePrice: '', extras: [], stockId: '', pricingType: 'sheet', margin: 0 }); // [ADICIONADO margin: 0]
-    setModalOpen(true);
-  };
 
+    if (type === 'client') {
+      setTempClient(item || { name: '', doc: '', contact: '', email: '' });
+    } else if (type === 'inventory') {
+      setTempInventory(item || { name: '', category: 'Outros', unit: '', measureType: 'unit', quantity: 0, minStock: 0, price: 0, sellPrice: 0 });
+    } else if (type === 'movement') {
+      setTempMovement({ type: 'in', quantity: 0, reason: 'Compra' });
+    } else if (type === 'transaction') {
+      setTempTransaction({ type: 'in', description: '', value: 0, category: 'Vendas', method: 'Dinheiro (Gaveta)' });
+    } else if (type === 'bill') {
+      setTempBill(item || { description: '', value: '', dueDate: '', category: 'Fornecedores', obs: '' });
+    } else if (type === 'productionManage') {
+      setProductionNote('');
+    } else if (type === 'service') {
+      // Se já existir, usa os materiais salvos. Se for antigo (stockId), converte para lista.
+      const initialMaterials = item?.materials || (item?.stockId ? [item.stockId] : []);
+      setTempService(item
+      ? { ...item, materials: initialMaterials }
+      : { name: '', w: '', h: '', basePrice: '', extras: [], materials: [], pricingType: 'sheet', margin: 0 }
+      );
+      setTempStockSelection(''); // Reseta a seleção
+    }
+
+    setModalOpen(true); // Faltava essa linha para o modal abrir de fato
+  };
   const payBill = (bill) => {
     if (!cashStatus.isOpen) {
       if(!window.confirm("O Caixa está FECHADO. Deseja registrar o pagamento mesmo assim? (Não afetará saldo da gaveta de hoje se for transferência)")) return;
@@ -668,12 +683,13 @@ export default function GraficaEmbyte() {
       // [MODIFICAÇÃO] Se for terceirizado, define estoque infinito (99999) para não alertar falta
       const isTerceirizado = tempInventory.category === 'Terceirizado';
       const itemToSave = {
-        ...tempInventory,
-        quantity: isTerceirizado ? 99999 : +tempInventory.quantity,
-        minStock: isTerceirizado ? 0 : +tempInventory.minStock,
-        price: +tempInventory.price,
-        // ... continua igual ...       price: +tempInventory.price,
-        sellPrice: +tempInventory.sellPrice || 0
+        ...tempService,
+        w: +tempService.w,
+        h: +tempService.h,
+        margin: +tempService.margin || 0,
+        basePrice: +tempService.basePrice,
+        materials: tempService.materials || [], // Salva a lista de materiais
+        stockId: null // Remove o vínculo antigo para não dar conflito
       };
       const newList = editingItem ? inventory.map(i => i.id === id ? { ...itemToSave, id } : i) : [...inventory, { ...itemToSave, id }];
       setInventory(newList);
@@ -687,7 +703,7 @@ export default function GraficaEmbyte() {
       setInventory(inventory.map(i => i.id === editingItem.id ? { ...i, quantity: newQty } : i));
       addLog(`Movimentação: ${tempMovement.type === 'in' ? '+' : '-'}${qty} em ${editingItem.name}`);
       showToast("Movimentação registrada!");
-   } else if (modalType === 'service') {
+    } else if (modalType === 'service') {
       // [AQUI É A ALTERAÇÃO]
       const itemToSave = {
         ...tempService,
@@ -699,8 +715,8 @@ export default function GraficaEmbyte() {
       };
 
       const newList = editingItem ?
-        services.map(p => p.id === id ? { ...itemToSave, id } : p) :
-        [...services, { ...itemToSave, id }];
+      services.map(p => p.id === id ? { ...itemToSave, id } : p) :
+      [...services, { ...itemToSave, id }];
 
       setServices(newList);
       addLog(`Serviço ${editingItem ? 'editado' : 'criado'}: ${tempService.name}`);
@@ -821,8 +837,14 @@ export default function GraficaEmbyte() {
       let productionPrice = 0;
       let details = {};
 
-      const linkedStock = inventory.find(i => i.id === service.stockId);
-      const materialCost = linkedStock ? linkedStock.price : 0;
+      let materialCost = 0;
+      // Pega a lista nova OU o id antigo (para compatibilidade)
+      const linkedMaterialsIds = service.materials || (service.stockId ? [service.stockId] : []);
+
+      linkedMaterialsIds.forEach(id => {
+        const item = inventory.find(i => i.id == id);
+        if (item) materialCost += item.price;
+      });
 
       if (service.pricingType === 'area') {
         const areaPerItem = (w * h) / 10000;
@@ -2032,86 +2054,86 @@ export default function GraficaEmbyte() {
 
             {/* [FIM DO BLOCO CORRIGIDO] - O código continua abaixo com os selects... */}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1 w-full">
-          <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider mb-1">Serviço de Venda</label>
-          <select className="bg-zinc-950 border border-zinc-700 text-zinc-200 p-2 rounded-none focus:border-blue-700 focus:outline-none font-mono text-sm h-[42px] w-full" value={calcData.serviceId} onChange={e => setCalcData({...calcData, serviceId: e.target.value, selectedExtras: []})}>
-          <option value="">Selecione...</option>
-          {services.map(p => <option key={p.id} value={p.id}>{p.name} ({p.w}x{p.h}cm)</option>)}
-          </select>
-          </div>
-
-          {/* [MODIFICADO] Quantidade com Botão de Calcular Cabimento */}
-          <div className="flex gap-2 items-end">
-          <div className="flex-1">
-          <Input label="Quantidade Total" placeholder="Ex: 1000" type="number" value={calcData.quantity} onChange={e => setCalcData({...calcData, quantity: e.target.value})} />
-          </div>
-          <Button
-          onClick={fillOneSheetQty}
-          variant="secondary"
-          className="h-[42px] mb-4 text-xs px-3 border-dashed border-zinc-600 text-zinc-400 hover:text-emerald-400 hover:border-emerald-500"
-          title="Calcular quantos cabem em 1 folha"
-          >
-          <Grid size={18} className="mr-1"/> PREENCHER
-          </Button>
-          </div>
-          </div>
-
-          {selectedService && selectedService.extras && selectedService.extras.length > 0 && (
-            <div className="bg-zinc-950 p-4 border border-zinc-800">
-            <p className="text-xs uppercase text-zinc-500 font-bold mb-2 flex items-center gap-1"><Scissors size={12}/> Adicionais Disponíveis</p>
-            <div className="grid grid-cols-2 gap-2">
-            {selectedService.extras.map(extra => (
-              <label key={extra.id} className={`flex items-center gap-2 p-2 border cursor-pointer transition-colors ${calcData.selectedExtras?.includes(extra.id) ? 'border-emerald-600 bg-emerald-900/10' : 'border-zinc-700 hover:border-zinc-600'}`}>
-              <input type="checkbox" checked={calcData.selectedExtras?.includes(extra.id) || false} onChange={() => toggleExtraSelection(extra.id)} className="accent-emerald-500 w-4 h-4"/>
-              <div className="flex flex-col"><span className="text-sm text-zinc-200">{extra.name}</span><span className="text-xs text-emerald-500 font-mono">+{formatCurrency(extra.value)}/fl</span></div>
-              </label>
-            ))}
-            </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-4">
-          <Input label="Acabamento Extra" placeholder="0.00" type="number" value={calcData.finishCost} onChange={e => setCalcData({...calcData, finishCost: e.target.value})} />
-          <div className="flex flex-col gap-1 w-full">
-          <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider mb-1">Prazo de Entrega</label>
-          <select className="bg-zinc-950 border border-zinc-700 text-zinc-200 p-2 rounded-none focus:border-blue-700 focus:outline-none font-mono text-sm h-[38px] w-full" value={calcData.deliveryTime} onChange={e => setCalcData({...calcData, deliveryTime: e.target.value})}>
-          <option value="1 dia útil">1 dia útil</option>
-          <option value="2 dias úteis">2 dias úteis</option>
-          <option value="3 dias úteis">3 dias úteis</option>
-          <option value="5 dias úteis">5 dias úteis</option>
-          </select>
-          </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4">
-          <Input label="Desconto Especial (R$)" placeholder="0.00" type="number" value={calcData.discount} onChange={e => setCalcData({...calcData, discount: e.target.value})} />
-          </div>
-
-          <Button onClick={calculateBudget} className="w-full py-3" variant="secondary">Calcular Item</Button>
-
-          {calcResult && (
-            <div className="bg-zinc-950 border border-zinc-800 p-4 mt-4 animate-in zoom-in-95 duration-200">
-            <div className="space-y-1 mb-4 border-b border-zinc-800 pb-4">
-            <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Aproveitamento:</span><span className="text-zinc-300 font-bold font-mono">{calcResult.fit} un/fl</span></div>
-            <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Total de Folhas:</span><span className="text-zinc-300 font-bold font-mono">{calcResult.totalSheets} fl</span></div>
-            <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Valor das Folhas:</span><span className="text-zinc-300 font-bold font-mono">{formatCurrency(calcResult.baseSheetsPrice)}</span></div>
-            {calcResult.extrasPrice > 0 && <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Valor dos Extras:</span><span className="text-emerald-500 font-bold font-mono">{formatCurrency(calcResult.extrasPrice)}</span></div>}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1 w-full">
+            <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider mb-1">Serviço de Venda</label>
+            <select className="bg-zinc-950 border border-zinc-700 text-zinc-200 p-2 rounded-none focus:border-blue-700 focus:outline-none font-mono text-sm h-[42px] w-full" value={calcData.serviceId} onChange={e => setCalcData({...calcData, serviceId: e.target.value, selectedExtras: []})}>
+            <option value="">Selecione...</option>
+            {services.map(p => <option key={p.id} value={p.id}>{p.name} ({p.w}x{p.h}cm)</option>)}
+            </select>
             </div>
 
-            {calcResult.discount > 0 && <div className="flex justify-between items-center mb-2 text-red-400 text-xs"><span>Desconto Aplicado:</span><span>- {formatCurrency(calcResult.discount)}</span></div>}
-
-            <div className="text-center bg-zinc-900 p-3 border border-zinc-800 mb-4">
-            <p className="text-xs uppercase text-zinc-500 mb-1">Valor Total do Item</p>
-            <p className="text-3xl font-black text-white tracking-tight">{formatCurrency(calcResult.finalPrice)}</p>
+            {/* [MODIFICADO] Quantidade com Botão de Calcular Cabimento */}
+            <div className="flex gap-2 items-end">
+            <div className="flex-1">
+            <Input label="Quantidade Total" placeholder="Ex: 1000" type="number" value={calcData.quantity} onChange={e => setCalcData({...calcData, quantity: e.target.value})} />
             </div>
-
-            <Button onClick={addToCart} variant="primary" className="w-full">
-            <Plus className="w-4 h-4 mr-2"/> Adicionar ao Pedido
+            <Button
+            onClick={fillOneSheetQty}
+            variant="secondary"
+            className="h-[42px] mb-4 text-xs px-3 border-dashed border-zinc-600 text-zinc-400 hover:text-emerald-400 hover:border-emerald-500"
+            title="Calcular quantos cabem em 1 folha"
+            >
+            <Grid size={18} className="mr-1"/> PREENCHER
             </Button>
             </div>
-          )}
-          </>
+            </div>
+
+            {selectedService && selectedService.extras && selectedService.extras.length > 0 && (
+              <div className="bg-zinc-950 p-4 border border-zinc-800">
+              <p className="text-xs uppercase text-zinc-500 font-bold mb-2 flex items-center gap-1"><Scissors size={12}/> Adicionais Disponíveis</p>
+              <div className="grid grid-cols-2 gap-2">
+              {selectedService.extras.map(extra => (
+                <label key={extra.id} className={`flex items-center gap-2 p-2 border cursor-pointer transition-colors ${calcData.selectedExtras?.includes(extra.id) ? 'border-emerald-600 bg-emerald-900/10' : 'border-zinc-700 hover:border-zinc-600'}`}>
+                <input type="checkbox" checked={calcData.selectedExtras?.includes(extra.id) || false} onChange={() => toggleExtraSelection(extra.id)} className="accent-emerald-500 w-4 h-4"/>
+                <div className="flex flex-col"><span className="text-sm text-zinc-200">{extra.name}</span><span className="text-xs text-emerald-500 font-mono">+{formatCurrency(extra.value)}/fl</span></div>
+                </label>
+              ))}
+              </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+            <Input label="Acabamento Extra" placeholder="0.00" type="number" value={calcData.finishCost} onChange={e => setCalcData({...calcData, finishCost: e.target.value})} />
+            <div className="flex flex-col gap-1 w-full">
+            <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider mb-1">Prazo de Entrega</label>
+            <select className="bg-zinc-950 border border-zinc-700 text-zinc-200 p-2 rounded-none focus:border-blue-700 focus:outline-none font-mono text-sm h-[38px] w-full" value={calcData.deliveryTime} onChange={e => setCalcData({...calcData, deliveryTime: e.target.value})}>
+            <option value="1 dia útil">1 dia útil</option>
+            <option value="2 dias úteis">2 dias úteis</option>
+            <option value="3 dias úteis">3 dias úteis</option>
+            <option value="5 dias úteis">5 dias úteis</option>
+            </select>
+            </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+            <Input label="Desconto Especial (R$)" placeholder="0.00" type="number" value={calcData.discount} onChange={e => setCalcData({...calcData, discount: e.target.value})} />
+            </div>
+
+            <Button onClick={calculateBudget} className="w-full py-3" variant="secondary">Calcular Item</Button>
+
+            {calcResult && (
+              <div className="bg-zinc-950 border border-zinc-800 p-4 mt-4 animate-in zoom-in-95 duration-200">
+              <div className="space-y-1 mb-4 border-b border-zinc-800 pb-4">
+              <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Aproveitamento:</span><span className="text-zinc-300 font-bold font-mono">{calcResult.fit} un/fl</span></div>
+              <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Total de Folhas:</span><span className="text-zinc-300 font-bold font-mono">{calcResult.totalSheets} fl</span></div>
+              <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Valor das Folhas:</span><span className="text-zinc-300 font-bold font-mono">{formatCurrency(calcResult.baseSheetsPrice)}</span></div>
+              {calcResult.extrasPrice > 0 && <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Valor dos Extras:</span><span className="text-emerald-500 font-bold font-mono">{formatCurrency(calcResult.extrasPrice)}</span></div>}
+              </div>
+
+              {calcResult.discount > 0 && <div className="flex justify-between items-center mb-2 text-red-400 text-xs"><span>Desconto Aplicado:</span><span>- {formatCurrency(calcResult.discount)}</span></div>}
+
+              <div className="text-center bg-zinc-900 p-3 border border-zinc-800 mb-4">
+              <p className="text-xs uppercase text-zinc-500 mb-1">Valor Total do Item</p>
+              <p className="text-3xl font-black text-white tracking-tight">{formatCurrency(calcResult.finalPrice)}</p>
+              </div>
+
+              <Button onClick={addToCart} variant="primary" className="w-full">
+              <Plus className="w-4 h-4 mr-2"/> Adicionar ao Pedido
+              </Button>
+              </div>
+            )}
+            </>
         )}
 
         {saleTab === 'product' && (
@@ -2746,7 +2768,27 @@ export default function GraficaEmbyte() {
           <td className="px-6 py-4 text-zinc-200 font-bold">{service.name}</td>
           <td className="px-6 py-4 text-emerald-400 font-mono font-bold">{formatCurrency(service.basePrice)}</td>
           <td className="px-6 py-4 text-zinc-500 text-xs uppercase">{service.pricingType === 'area' ? 'Por m²' : 'Por Folha'}</td>
-          <td className="px-6 py-4">{linkedStock ? <span className="text-zinc-300 text-xs flex items-center gap-1"><Package size={12} className="text-blue-500"/> {linkedStock.name}</span> : <span className="text-red-500 text-xs italic">Não vinculado</span>}</td>
+          <td className="px-6 py-4">
+          <div className="flex flex-col gap-1">
+          {(service.materials && service.materials.length > 0) ? (
+            service.materials.map((mId, idx) => {
+              const m = inventory.find(i => i.id == mId);
+              if(!m) return null;
+              return (
+                <span key={idx} className="text-zinc-300 text-xs flex items-center gap-1">
+                <Package size={10} className="text-blue-500"/> {m.name}
+                </span>
+              );
+            })
+          ) : (
+            // Fallback para exibir o antigo se ainda não foi salvo no novo formato
+            (() => {
+              const old = inventory.find(i => i.id === service.stockId);
+              return old ? <span className="text-zinc-300 text-xs flex items-center gap-1"><Package size={10} className="text-blue-500"/> {old.name}</span> : <span className="text-zinc-600 text-xs">-</span>;
+            })()
+          )}
+          </div>
+          </td>
           <td className="px-6 py-4"><div className="flex flex-wrap gap-1">{service.extras?.map(ex => <span key={ex.id} className="px-2 py-1 bg-zinc-800 text-xs border border-zinc-700">{ex.name}</span>)}</div></td>
           <td className="px-6 py-4 flex gap-2">
           <Button onClick={() => openModal('service', service)} variant="secondary" className="px-2 py-1"><Edit size={14}/></Button>
@@ -2900,12 +2942,53 @@ export default function GraficaEmbyte() {
             <Input label="Margem/Pinça (cm)" type="number" value={tempService.margin} onChange={e => setTempService({...tempService, margin: e.target.value})} placeholder="0.5" />
             </div>
           )}
-          <div className="flex flex-col gap-1 mb-4 w-full">
-          <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider">Material Estoque Vinculado</label>
-          <select className="bg-zinc-950 border border-zinc-700 text-zinc-200 p-2 rounded-none focus:border-blue-700 focus:outline-none placeholder-zinc-700 font-mono text-sm w-full" value={tempService.stockId || ''} onChange={e => setTempService({...tempService, stockId: parseInt(e.target.value)})}>
-          <option value="">Nenhum</option>
-          {inventory.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          <div className="bg-zinc-900/50 border border-zinc-800 p-3 mb-4">
+          <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider mb-2 block">
+          Materiais de Custo (Composição)
+          </label>
+
+          {/* Lista dos selecionados */}
+          <div className="flex flex-wrap gap-2 mb-3">
+          {tempService.materials && tempService.materials.length > 0 ? (
+            tempService.materials.map((matId, idx) => {
+              const mat = inventory.find(i => i.id == matId);
+              return (
+                <div key={idx} className="bg-zinc-800 text-xs px-2 py-1 border border-zinc-700 flex items-center gap-2 rounded">
+                <span className="text-zinc-200">{mat ? mat.name : 'Item removido'}</span>
+                <span className="text-emerald-500 font-mono">{mat ? formatCurrency(mat.price) : ''}</span>
+                <button type="button" onClick={() => {
+                  const newMats = tempService.materials.filter((_, i) => i !== idx);
+                  setTempService({...tempService, materials: newMats});
+                }} className="text-red-500 hover:text-white"><X size={12}/></button>
+                </div>
+              );
+            })
+          ) : (
+            <span className="text-zinc-600 text-xs italic">Nenhum material vinculado (Custo Zero).</span>
+          )}
+          </div>
+
+          {/* Seletor para adicionar */}
+          <div className="flex gap-2">
+          <select
+          className="bg-zinc-950 border border-zinc-700 text-zinc-200 p-2 rounded-none focus:border-blue-700 outline-none text-sm flex-1 font-mono"
+          value={tempStockSelection}
+          onChange={e => setTempStockSelection(e.target.value)}
+          >
+          <option value="">Selecione para adicionar...</option>
+          {inventory.map(item => (
+            <option key={item.id} value={item.id}>
+            {item.name} ({formatCurrency(item.price)})
+            </option>
+          ))}
           </select>
+          <Button type="button" variant="secondary" onClick={() => {
+            if(!tempStockSelection) return;
+            const current = tempService.materials || [];
+            setTempService({...tempService, materials: [...current, parseInt(tempStockSelection)]});
+            setTempStockSelection('');
+          }} className="px-3"><Plus size={16}/></Button>
+          </div>
           </div>
           <div className="border-t border-zinc-800 pt-4 mt-2">
           <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider mb-2 block">Extras (Soma ao preço base)</label>
@@ -3285,46 +3368,46 @@ export default function GraficaEmbyte() {
         </button>
       )}
       </nav>
-        <div className="p-4 border-t border-zinc-800">
-        <Button onClick={() => {
-          localStorage.removeItem('embyte_user');
-          setUser(null);
-        }} variant="secondary" className="w-full flex items-center justify-center gap-2 text-xs"><LogOut size={14} /> Sair</Button>
+      <div className="p-4 border-t border-zinc-800">
+      <Button onClick={() => {
+        localStorage.removeItem('embyte_user');
+        setUser(null);
+      }} variant="secondary" className="w-full flex items-center justify-center gap-2 text-xs"><LogOut size={14} /> Sair</Button>
+      </div>
+      </aside>
+      <main className="flex-1 overflow-auto bg-zinc-950 p-8">
+      <header className="flex justify-between items-center mb-8 pb-4 border-b border-zinc-800">
+      <div>
+      <h1 className="text-2xl font-bold text-white uppercase tracking-tight">
+      {view === 'vendas' ? 'Vendas e Orçamentos' :
+        view === 'atendimento' ? 'Central de Atendimento' : // [NOVO] Título
+        view === 'clientes' ? 'Gestão de Clientes' :
+        view === 'caixa' ? 'Fluxo de Caixa Diário' :
+        view === 'producao' ? 'Chão de Fábrica (OPs)' :
+        view === 'financeiro' ? 'Gestão Financeira' :
+        view === 'relatorios' ? 'Central de Relatórios' :
+        view === 'estoque' ? 'Controle de Estoque' :
+        view === 'precificacao' ? 'Catálogo de Serviços' :
+        view === 'configuracoes' ? 'Configurações' : 'Painel'}
+        </h1>
+        <p className="text-zinc-500 text-sm font-mono mt-1 flex items-center gap-2">
+        {new Date().toLocaleDateString('pt-PT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+        {isOffline && <span className="text-xs bg-red-900 text-red-200 px-2 py-0.5 rounded border border-red-700 flex items-center gap-1 font-bold animate-pulse"><WifiOff size={10}/> MODO OFFLINE (LEITURA)</span>}
+        </p>
         </div>
-        </aside>
-        <main className="flex-1 overflow-auto bg-zinc-950 p-8">
-        <header className="flex justify-between items-center mb-8 pb-4 border-b border-zinc-800">
-        <div>
-        <h1 className="text-2xl font-bold text-white uppercase tracking-tight">
-        {view === 'vendas' ? 'Vendas e Orçamentos' :
-          view === 'atendimento' ? 'Central de Atendimento' : // [NOVO] Título
-          view === 'clientes' ? 'Gestão de Clientes' :
-          view === 'caixa' ? 'Fluxo de Caixa Diário' :
-          view === 'producao' ? 'Chão de Fábrica (OPs)' :
-          view === 'financeiro' ? 'Gestão Financeira' :
-          view === 'relatorios' ? 'Central de Relatórios' :
-          view === 'estoque' ? 'Controle de Estoque' :
-          view === 'precificacao' ? 'Catálogo de Serviços' :
-          view === 'configuracoes' ? 'Configurações' : 'Painel'}
-          </h1>
-          <p className="text-zinc-500 text-sm font-mono mt-1 flex items-center gap-2">
-          {new Date().toLocaleDateString('pt-PT', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-          {isOffline && <span className="text-xs bg-red-900 text-red-200 px-2 py-0.5 rounded border border-red-700 flex items-center gap-1 font-bold animate-pulse"><WifiOff size={10}/> MODO OFFLINE (LEITURA)</span>}
-          </p>
-          </div>
-          </header>
+        </header>
 
-          {view === 'clientes' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && ClientesView()}
-          {view === 'atendimento' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && renderAtendimentoView()}
-          {view === 'vendas' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && VendasView()}
-          {view === 'caixa' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && CaixaView()}
-          {view === 'producao' && ProducaoView()}
-          {view === 'financeiro' && user.role === ROLES.ADMIN && FinanceiroView()}
-          {view === 'relatorios' && user.role === ROLES.ADMIN && RelatoriosView()}
-          {view === 'estoque' && user.role !== ROLES.DESIGNER && EstoqueView()}
-          {view === 'precificacao' && user.role === ROLES.ADMIN && PrecificacaoView()}
-          {view === 'configuracoes' && user.role === ROLES.ADMIN && ConfiguracoesView()}
-          </main>
-          </div>
-      );
-      }
+        {view === 'clientes' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && ClientesView()}
+        {view === 'atendimento' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && renderAtendimentoView()}
+        {view === 'vendas' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && VendasView()}
+        {view === 'caixa' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && CaixaView()}
+        {view === 'producao' && ProducaoView()}
+        {view === 'financeiro' && user.role === ROLES.ADMIN && FinanceiroView()}
+        {view === 'relatorios' && user.role === ROLES.ADMIN && RelatoriosView()}
+        {view === 'estoque' && user.role !== ROLES.DESIGNER && EstoqueView()}
+        {view === 'precificacao' && user.role === ROLES.ADMIN && PrecificacaoView()}
+        {view === 'configuracoes' && user.role === ROLES.ADMIN && ConfiguracoesView()}
+        </main>
+        </div>
+    );
+}
