@@ -2677,7 +2677,11 @@ export default function GraficaEmbyte() {
         if (inventoryFilter === 'low') return matchSearch && item.quantity <= item.minStock;
         return matchSearch && item.category === inventoryFilter;
       });
-      const totalValue = inventory.reduce((acc, curr) => acc + (curr.quantity * curr.price), 0);
+      // [CORREÇÃO] Só soma valor de estoque se NÃO for terceirizado
+      const totalValue = inventory.reduce((acc, curr) => {
+        if (curr.category === 'Terceirizado') return acc;
+        return acc + (curr.quantity * curr.price);
+      }, 0);
       return (
         <div className="space-y-6 animate-in fade-in duration-300">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
