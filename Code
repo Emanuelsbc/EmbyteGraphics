@@ -60,10 +60,6 @@ import {
   WifiOff,
   Maximize,
   Grid,
-  Headset,
-  Smartphone,
-  History,
-  SendHorizontal,
   Wifi
 } from 'lucide-react';
 
@@ -441,7 +437,6 @@ export default function GraficaEmbyte() {
   const [tempMovement, setTempMovement] = useState({ type: 'in', quantity: 0, reason: 'Compra' });
   const [tempService, setTempService] = useState({ name: '', w: '', h: '', basePrice: '', extras: [], stockId: '', pricingType: 'sheet' });
   const [tempExtra, setTempExtra] = useState({ name: '', value: '' });
-  const [tempStockSelection, setTempStockSelection] = useState('');
   const [tempTransaction, setTempTransaction] = useState({ type: 'in', description: '', value: 0, category: 'Vendas', method: 'Dinheiro (Gaveta)' });
   const [tempBill, setTempBill] = useState({ description: '', value: '', dueDate: '', category: 'Fornecedores', obs: '' });
   const [paymentData, setPaymentData] = useState({ orderId: null, totalValue: 0, minValue: 0, payValue: 0, type: 'signal', method: 'Pix' });
@@ -459,14 +454,10 @@ export default function GraficaEmbyte() {
   const [productSaleData, setProductSaleData] = useState({
     inventoryId: '', quantity: '', unitPrice: ''
   });
-  const [calcResult, setCalcResult] = useState(null);
 
-  // [NOVO] Controle para ignorar margens no cálculo
-  const [ignoreMargin, setIgnoreMargin] = useState(false);
+  const [calcResult, setCalcResult] = useState(null);
   const [editingOrderId, setEditingOrderId] = useState(null);
   const [selectedClientId, setSelectedClientId] = useState('');
-  const [selectedClientForCRM, setSelectedClientForCRM] = useState(null);
-  const [customMessage, setCustomMessage] = useState('');
   // ... outros estados ...
 
   useEffect(() => {
@@ -622,31 +613,16 @@ export default function GraficaEmbyte() {
   const openModal = (type, item = null) => {
     setModalType(type);
     setEditingItem(item);
-
-    if (type === 'client') {
-      setTempClient(item || { name: '', doc: '', contact: '', email: '' });
-    } else if (type === 'inventory') {
-      setTempInventory(item || { name: '', category: 'Outros', unit: '', measureType: 'unit', quantity: 0, minStock: 0, price: 0, sellPrice: 0 });
-    } else if (type === 'movement') {
-      setTempMovement({ type: 'in', quantity: 0, reason: 'Compra' });
-    } else if (type === 'transaction') {
-      setTempTransaction({ type: 'in', description: '', value: 0, category: 'Vendas', method: 'Dinheiro (Gaveta)' });
-    } else if (type === 'bill') {
-      setTempBill(item || { description: '', value: '', dueDate: '', category: 'Fornecedores', obs: '' });
-    } else if (type === 'productionManage') {
-      setProductionNote('');
-    } else if (type === 'service') {
-      // Se já existir, usa os materiais salvos. Se for antigo (stockId), converte para lista.
-      const initialMaterials = item?.materials || (item?.stockId ? [item.stockId] : []);
-      setTempService(item
-      ? { ...item, materials: initialMaterials }
-      : { name: '', w: '', h: '', basePrice: '', extras: [], materials: [], pricingType: 'sheet', margin: 0 }
-      );
-      setTempStockSelection(''); // Reseta a seleção
-    }
-
-    setModalOpen(true); // Faltava essa linha para o modal abrir de fato
+    if (type === 'client') setTempClient(item || { name: '', doc: '', contact: '', email: '' });
+    else if (type === 'inventory') setTempInventory(item || { name: '', category: 'Outros', unit: '', measureType: 'unit', quantity: 0, minStock: 0, price: 0, sellPrice: 0 });
+    else if (type === 'service') setTempService(item || { name: '', w: '', h: '', basePrice: '', extras: [], stockId: '', pricingType: 'sheet' });
+    else if (type === 'movement') setTempMovement({ type: 'in', quantity: 0, reason: 'Compra' });
+    else if (type === 'transaction') setTempTransaction({ type: 'in', description: '', value: 0, category: 'Vendas', method: 'Dinheiro (Gaveta)' });
+    else if (type === 'bill') setTempBill(item || { description: '', value: '', dueDate: '', category: 'Fornecedores', obs: '' });
+    else if (type === 'productionManage') setProductionNote('');
+    setModalOpen(true);
   };
+
   const payBill = (bill) => {
     if (!cashStatus.isOpen) {
       if(!window.confirm("O Caixa está FECHADO. Deseja registrar o pagamento mesmo assim? (Não afetará saldo da gaveta de hoje se for transferência)")) return;
@@ -683,13 +659,12 @@ export default function GraficaEmbyte() {
       // [MODIFICAÇÃO] Se for terceirizado, define estoque infinito (99999) para não alertar falta
       const isTerceirizado = tempInventory.category === 'Terceirizado';
       const itemToSave = {
-        ...tempService,
-        w: +tempService.w,
-        h: +tempService.h,
-        margin: +tempService.margin || 0,
-        basePrice: +tempService.basePrice,
-        materials: tempService.materials || [], // Salva a lista de materiais
-        stockId: null // Remove o vínculo antigo para não dar conflito
+        ...tempInventory,
+        quantity: isTerceirizado ? 99999 : +tempInventory.quantity,
+        minStock: isTerceirizado ? 0 : +tempInventory.minStock,
+        price: +tempInventory.price,
+        // ... continua igual ...       price: +tempInventory.price,
+        sellPrice: +tempInventory.sellPrice || 0
       };
       const newList = editingItem ? inventory.map(i => i.id === id ? { ...itemToSave, id } : i) : [...inventory, { ...itemToSave, id }];
       setInventory(newList);
@@ -704,20 +679,8 @@ export default function GraficaEmbyte() {
       addLog(`Movimentação: ${tempMovement.type === 'in' ? '+' : '-'}${qty} em ${editingItem.name}`);
       showToast("Movimentação registrada!");
     } else if (modalType === 'service') {
-      // [AQUI É A ALTERAÇÃO]
-      const itemToSave = {
-        ...tempService,
-        w: +tempService.w,
-        h: +tempService.h,
-        margin: +tempService.margin || 0, // <--- Esta é a linha nova
-        basePrice: +tempService.basePrice,
-        stockId: +tempService.stockId
-      };
-
-      const newList = editingItem ?
-      services.map(p => p.id === id ? { ...itemToSave, id } : p) :
-      [...services, { ...itemToSave, id }];
-
+      const itemToSave = { ...tempService, w: +tempService.w, h: +tempService.h, basePrice: +tempService.basePrice, stockId: +tempService.stockId };
+      const newList = editingItem ? services.map(p => p.id === id ? { ...itemToSave, id } : p) : [...services, { ...itemToSave, id }];
       setServices(newList);
       addLog(`Serviço ${editingItem ? 'editado' : 'criado'}: ${tempService.name}`);
     } else if (modalType === 'transaction') {
@@ -837,14 +800,8 @@ export default function GraficaEmbyte() {
       let productionPrice = 0;
       let details = {};
 
-      let materialCost = 0;
-      // Pega a lista nova OU o id antigo (para compatibilidade)
-      const linkedMaterialsIds = service.materials || (service.stockId ? [service.stockId] : []);
-
-      linkedMaterialsIds.forEach(id => {
-        const item = inventory.find(i => i.id == id);
-        if (item) materialCost += item.price;
-      });
+      const linkedStock = inventory.find(i => i.id === service.stockId);
+      const materialCost = linkedStock ? linkedStock.price : 0;
 
       if (service.pricingType === 'area') {
         const areaPerItem = (w * h) / 10000;
@@ -878,30 +835,21 @@ export default function GraficaEmbyte() {
         };
       }
       else {
-        // [MODIFICADO] Lógica Inteligente de Margem
-        // Se o botão "Ignorar" estiver ativo, margem é 0. Senão, usa a do cadastro ou 0.
-        const margin = ignoreMargin ? 0 : (service.margin || 0);
-
-        const sheetW = service.w - (margin * 2);
-        const sheetH = service.h - (margin * 2);
-
-        // Validação
-        if (sheetW <= 0 || sheetH <= 0) { showToast("Margem maior que o papel!", "error"); return; }
-
-        // Cálculo de aproveitamento (Reto ou Girado)
+        const sheetW = service.w - 1;
+        const sheetH = service.h - 1;
         const fitA = Math.floor(sheetW / w) * Math.floor(sheetH / h);
         const fitB = Math.floor(sheetW / h) * Math.floor(sheetH / w);
         const bestFit = Math.max(fitA, fitB);
 
-        if (bestFit === 0) { showToast("Item maior que a área útil da folha.", "error"); return; }
+        if (bestFit === 0) { showToast("Item maior que a folha.", "error"); return; }
 
         const totalSheets = Math.ceil(qty / bestFit);
         const wasteSheets = totalSheets > 10 ? Math.ceil(totalSheets * 0.10) : 0;
         const finalSheets = totalSheets + wasteSheets;
 
-        // Calcula Extras
         let extrasCostTotal = 0;
         let selectedExtrasNames = [];
+
         if (service.extras && calcData.selectedExtras) {
           service.extras.forEach(ex => {
             if (calcData.selectedExtras.includes(ex.id)) {
@@ -1707,160 +1655,6 @@ export default function GraficaEmbyte() {
       );
     };
 
-    // [CORRIGIDO] Função de Renderização (Sem useStates dentro)
-    const renderAtendimentoView = () => {
-      // Filtra clientes
-      const filteredClients = clients.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
-
-      // Templates
-      // Templates (Com códigos Unicode para evitar erros de Emoji )
-      const msgTemplates = [
-        { title: "\uD83D\uDC4B Boas Vindas", text: "Ol\u00E1 *{nome}*, tudo bem? Sou Emanuel da *{empresa}* e gostaria de saber como podemos ajudar nos seus projetos gr\u00E1ficos hoje!" },
-        { title: "\uD83D\uDCCD Endereço", text: "Ol\u00E1 *{nome}*! Segue nosso endere\u00E7o:\n*{endereco}*\nEstamos aguardando sua visita!" },
-        { title: "\uD83D\uDCB0 Cobrança", text: "Oi *{nome}*, tudo bom? Passando s\u00F3 para lembrar sobre o pendente do pedido. Consegue me dar uma previs\u00E3o? Obrigado!" },
-        { title: "\uD83C\uDFA8 Arte Pronta", text: "Ol\u00E1 *{nome}*, sua arte est\u00E1 pronta para aprova\u00E7\u00E3o! \uD83C\uDFA8\nPodemos finalizar ou deseja alguma altera\u00E7\u00E3o?" },
-        { title: "\u2705 Pedido Pronto", text: "Not\u00EDcia boa *{nome}*! Seu material j\u00E1 est\u00E1 pronto e separado para retirada. \uD83D\uDCE6" },
-      ];
-
-      const handleSendTemplate = (templateText) => {
-        if (!selectedClientForCRM) return;
-
-        let text = templateText
-        .replace('{nome}', selectedClientForCRM.name.split(' ')[0])
-        .replace('{empresa}', settings.name)
-        .replace('{endereco}', settings.address);
-
-        const phone = selectedClientForCRM.contact.replace(/\D/g, '');
-        if (!phone) { showToast("Cliente sem telefone!", "error"); return; }
-
-        // [CORREÇÃO] Use 'api.whatsapp.com' em vez de 'wa.me' para corrigir os emojis no PC
-        window.open(`https://api.whatsapp.com/send?phone=55${phone}&text=${encodeURIComponent(text)}`, '_blank');
-
-        addLog(`Atendimento: Mensagem enviada para ${selectedClientForCRM.name}`);
-      };
-
-      const handleSendCustom = () => {
-        if (!customMessage.trim()) return;
-        handleSendTemplate(customMessage);
-        setCustomMessage('');
-      };
-
-      // Dados do Cliente
-      const clientOrders = selectedClientForCRM ? orders.filter(o => o.client === selectedClientForCRM.name) : [];
-      const pendingOrders = clientOrders.filter(o => o.status !== 'concluido' && o.status !== 'cancelado');
-      const debt = clientOrders.reduce((acc, o) => acc + (o.value - (o.paidAmount || 0)), 0);
-
-      return (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full animate-in fade-in duration-300">
-
-        {/* COLUNA ESQUERDA: LISTA */}
-        <div className="lg:col-span-4 bg-zinc-900 border border-zinc-800 flex flex-col h-[calc(100vh-140px)]">
-        <div className="p-4 border-b border-zinc-800 bg-zinc-950">
-        <h3 className="text-sm font-bold text-zinc-200 uppercase mb-2">Selecionar Cliente</h3>
-        <input
-        type="text"
-        placeholder="Buscar nome..."
-        value={searchTerm}
-        onChange={e => setSearchTerm(e.target.value)}
-        className="bg-zinc-900 border border-zinc-700 text-sm p-2 text-white w-full rounded-none focus:border-blue-500 outline-none"
-        />
-        </div>
-        <div className="overflow-y-auto flex-1">
-        {filteredClients.map(client => (
-          <div
-          key={client.id}
-          onClick={() => setSelectedClientForCRM(client)}
-          className={`p-4 border-b border-zinc-800 cursor-pointer hover:bg-zinc-800/50 transition-colors ${selectedClientForCRM?.id === client.id ? 'bg-blue-900/20 border-l-4 border-l-blue-500' : ''}`}
-          >
-          <p className="font-bold text-zinc-200">{client.name}</p>
-          <div className="flex justify-between items-center mt-1">
-          <span className="text-xs text-zinc-500 flex items-center gap-1"><Smartphone size={10}/> {client.contact}</span>
-          <span className="text-xs font-mono text-emerald-600 font-bold">{formatCurrency(client.totalSpent)}</span>
-          </div>
-          </div>
-        ))}
-        </div>
-        </div>
-
-        {/* COLUNA DIREITA: DETALHES */}
-        <div className="lg:col-span-8 flex flex-col gap-6 h-[calc(100vh-140px)] overflow-y-auto pr-2">
-        {selectedClientForCRM ? (
-          <>
-          {/* INFO CLIENTE */}
-          <div className="bg-zinc-900 border border-zinc-800 p-6 shadow-lg">
-          <div className="flex justify-between items-start">
-          <div>
-          <h2 className="text-2xl font-bold text-white">{selectedClientForCRM.name}</h2>
-          <p className="text-zinc-500 text-sm mt-1">{selectedClientForCRM.email || 'Sem email cadastrado'}</p>
-          <p className="text-zinc-500 text-sm">{selectedClientForCRM.doc || 'CPF/CNPJ não informado'}</p>
-          </div>
-          <div className="text-right">
-          <p className="text-xs text-zinc-500 uppercase font-bold">Total em Aberto (Dívida)</p>
-          <p className={`text-3xl font-mono font-bold ${debt > 0 ? 'text-red-500' : 'text-emerald-500'}`}>{formatCurrency(debt)}</p>
-          </div>
-          </div>
-          </div>
-
-          {/* PEDIDOS ABERTO */}
-          {pendingOrders.length > 0 && (
-            <div className="bg-zinc-900 border border-zinc-800 p-4 border-l-4 border-l-orange-500">
-            <h3 className="text-sm font-bold text-orange-500 uppercase mb-3 flex items-center gap-2"><History size={16}/> Pedidos em Andamento</h3>
-            <div className="space-y-2">
-            {pendingOrders.map(o => (
-              <div key={o.id} className="bg-zinc-950 p-3 border border-zinc-800 flex justify-between items-center">
-              <div>
-              <span className="font-mono text-white font-bold mr-2">#{o.id}</span>
-              <span className="text-sm text-zinc-400">{o.description}</span>
-              </div>
-              <Badge status={o.status}/>
-              </div>
-            ))}
-            </div>
-            </div>
-          )}
-
-          {/* MENSAGENS */}
-          <div className="bg-zinc-900 border border-zinc-800 p-6 flex-1">
-          <h3 className="text-sm font-bold text-zinc-200 uppercase mb-4 flex items-center gap-2"><SendHorizontal size={16}/> Enviar Mensagem (WhatsApp)</h3>
-
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-          {msgTemplates.map((t, i) => (
-            <button
-            key={i}
-            onClick={() => handleSendTemplate(t.text)}
-            className="p-3 bg-zinc-950 border border-zinc-800 hover:border-emerald-600 hover:bg-emerald-900/10 text-left transition-all group"
-            >
-            <p className="text-xs font-bold text-zinc-300 group-hover:text-emerald-400 mb-1">{t.title}</p>
-            <p className="text-[10px] text-zinc-600 truncate">{t.text}</p>
-            </button>
-          ))}
-          </div>
-
-          <div className="flex gap-2">
-          <input
-          type="text"
-          value={customMessage}
-          onChange={e => setCustomMessage(e.target.value)}
-          placeholder="Digite uma mensagem personalizada..."
-          className="flex-1 bg-zinc-950 border border-zinc-700 text-white p-3 focus:border-emerald-500 outline-none"
-          />
-          <Button onClick={handleSendCustom} variant="whatsapp" className="px-6">
-          <SendHorizontal size={18}/>
-          </Button>
-          </div>
-          </div>
-          </>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-zinc-600 border border-dashed border-zinc-800 bg-zinc-900/50">
-          <Headset size={48} className="mb-4 opacity-20"/>
-          <p>Selecione um cliente ao lado para iniciar o atendimento</p>
-          </div>
-        )}
-        </div>
-        </div>
-      );
-    };
-
     const CaixaView = () => {
       if (!cashStatus.isOpen) {
         return (
@@ -2004,136 +1798,102 @@ export default function GraficaEmbyte() {
 
         {saleTab === 'service' && (
           <>
-          {/* [INICIO DO BLOCO CORRIGIDO] */}
+          {/* [MODIFICADO] Bloco de Medidas com Botão Xerox */}
           <div className="flex gap-4 items-end mb-4">
-
-          {/* Coluna 1: Inputs de Largura e Altura */}
           <div className="grid grid-cols-2 gap-4 flex-1">
           <Input label="Largura (cm)" placeholder="Ex: 5" type="number" value={calcData.itemW} onChange={e => setCalcData({...calcData, itemW: e.target.value})} />
           <Input label="Altura (cm)" placeholder="Ex: 5" type="number" value={calcData.itemH} onChange={e => setCalcData({...calcData, itemH: e.target.value})} />
           </div>
-
-          {/* Coluna 2: Botões de Controle + Indicador */}
-          <div className="flex flex-col gap-2 mb-4"> {/* Adicionei mb-4 para alinhar com inputs */}
-
-          {/* Botão Folha Cheia */}
           <Button
           onClick={fillFullSheet}
           variant="secondary"
-          className="h-[30px] text-[10px] px-2 border-dashed border-zinc-600 text-zinc-400 hover:text-white"
-          title="Usar tamanho total da folha"
+          className="h-[42px] mb-4 text-xs px-3 border-dashed border-zinc-600 text-zinc-400 hover:text-white hover:border-white"
+          title="Usar tamanho total da folha (Xerox)"
           >
-          <Maximize size={14} className="mr-1"/> Folha Cheia
+          <Maximize size={18} className="mr-1"/> Folha Cheia
           </Button>
+          </div>
 
-          {/* Botão Ignorar Margens */}
-          <button
-          onClick={() => setIgnoreMargin(!ignoreMargin)}
-          className={`h-[30px] px-2 text-[10px] font-bold uppercase rounded border transition-colors flex items-center justify-center
-            ${ignoreMargin
-              ? 'bg-red-900/30 text-red-400 border-red-900 hover:bg-red-900/50'
-              : 'bg-zinc-800 text-zinc-500 border-zinc-700 hover:text-zinc-300'
-            }`}
-            title={ignoreMargin ? "Margens estão sendo IGNORADAS" : "Margens estão ATIVAS"}
-            >
-            {ignoreMargin ? <XCircle size={14} className="mr-1"/> : <CheckCircle size={14} className="mr-1"/>}
-            {ignoreMargin ? 'Ignorar Margem' : 'Usar Margem'}
-            </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex flex-col gap-1 w-full">
+          <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider mb-1">Serviço de Venda</label>
+          <select className="bg-zinc-950 border border-zinc-700 text-zinc-200 p-2 rounded-none focus:border-blue-700 focus:outline-none font-mono text-sm h-[42px] w-full" value={calcData.serviceId} onChange={e => setCalcData({...calcData, serviceId: e.target.value, selectedExtras: []})}>
+          <option value="">Selecione...</option>
+          {services.map(p => <option key={p.id} value={p.id}>{p.name} ({p.w}x{p.h}cm)</option>)}
+          </select>
+          </div>
 
-            {/* Indicador Visual da Margem (Ajustado) */}
-            <div className="text-xs text-center font-mono mt-1"> {/* Aumentei para text-xs e dei um espaço (mt-1) */}
-            {ignoreMargin ?
-              <span className="text-red-500 font-bold">MARGEM: 0 cm</span> :
-              <span className="text-zinc-500">Margem: <span className="text-zinc-300 font-bold">{selectedService?.margin || 0} cm</span></span>
-            }
+          {/* [MODIFICADO] Quantidade com Botão de Calcular Cabimento */}
+          <div className="flex gap-2 items-end">
+          <div className="flex-1">
+          <Input label="Quantidade Total" placeholder="Ex: 1000" type="number" value={calcData.quantity} onChange={e => setCalcData({...calcData, quantity: e.target.value})} />
+          </div>
+          <Button
+          onClick={fillOneSheetQty}
+          variant="secondary"
+          className="h-[42px] mb-4 text-xs px-3 border-dashed border-zinc-600 text-zinc-400 hover:text-emerald-400 hover:border-emerald-500"
+          title="Calcular quantos cabem em 1 folha"
+          >
+          <Grid size={18} className="mr-1"/> 1 Folha
+          </Button>
+          </div>
+          </div>
+
+          {selectedService && selectedService.extras && selectedService.extras.length > 0 && (
+            <div className="bg-zinc-950 p-4 border border-zinc-800">
+            <p className="text-xs uppercase text-zinc-500 font-bold mb-2 flex items-center gap-1"><Scissors size={12}/> Adicionais Disponíveis</p>
+            <div className="grid grid-cols-2 gap-2">
+            {selectedService.extras.map(extra => (
+              <label key={extra.id} className={`flex items-center gap-2 p-2 border cursor-pointer transition-colors ${calcData.selectedExtras?.includes(extra.id) ? 'border-emerald-600 bg-emerald-900/10' : 'border-zinc-700 hover:border-zinc-600'}`}>
+              <input type="checkbox" checked={calcData.selectedExtras?.includes(extra.id) || false} onChange={() => toggleExtraSelection(extra.id)} className="accent-emerald-500 w-4 h-4"/>
+              <div className="flex flex-col"><span className="text-sm text-zinc-200">{extra.name}</span><span className="text-xs text-emerald-500 font-mono">+{formatCurrency(extra.value)}/fl</span></div>
+              </label>
+            ))}
+            </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+          <Input label="Acabamento Extra" placeholder="0.00" type="number" value={calcData.finishCost} onChange={e => setCalcData({...calcData, finishCost: e.target.value})} />
+          <div className="flex flex-col gap-1 w-full">
+          <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider mb-1">Prazo de Entrega</label>
+          <select className="bg-zinc-950 border border-zinc-700 text-zinc-200 p-2 rounded-none focus:border-blue-700 focus:outline-none font-mono text-sm h-[38px] w-full" value={calcData.deliveryTime} onChange={e => setCalcData({...calcData, deliveryTime: e.target.value})}>
+          <option value="1 dia útil">1 dia útil</option>
+          <option value="2 dias úteis">2 dias úteis</option>
+          <option value="3 dias úteis">3 dias úteis</option>
+          <option value="5 dias úteis">5 dias úteis</option>
+          </select>
+          </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+          <Input label="Desconto Especial (R$)" placeholder="0.00" type="number" value={calcData.discount} onChange={e => setCalcData({...calcData, discount: e.target.value})} />
+          </div>
+
+          <Button onClick={calculateBudget} className="w-full py-3" variant="secondary">Calcular Item</Button>
+
+          {calcResult && (
+            <div className="bg-zinc-950 border border-zinc-800 p-4 mt-4 animate-in zoom-in-95 duration-200">
+            <div className="space-y-1 mb-4 border-b border-zinc-800 pb-4">
+            <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Aproveitamento:</span><span className="text-zinc-300 font-bold font-mono">{calcResult.fit} un/fl</span></div>
+            <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Total de Folhas:</span><span className="text-zinc-300 font-bold font-mono">{calcResult.totalSheets} fl</span></div>
+            <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Valor das Folhas:</span><span className="text-zinc-300 font-bold font-mono">{formatCurrency(calcResult.baseSheetsPrice)}</span></div>
+            {calcResult.extrasPrice > 0 && <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Valor dos Extras:</span><span className="text-emerald-500 font-bold font-mono">{formatCurrency(calcResult.extrasPrice)}</span></div>}
             </div>
 
-            </div> {/* Fim da Coluna 2 */}
+            {calcResult.discount > 0 && <div className="flex justify-between items-center mb-2 text-red-400 text-xs"><span>Desconto Aplicado:</span><span>- {formatCurrency(calcResult.discount)}</span></div>}
 
-            </div> {/* Fim da div flex gap-4 (O ERRO PROVAVELMENTE ESTAVA AQUI) */}
-
-            {/* [FIM DO BLOCO CORRIGIDO] - O código continua abaixo com os selects... */}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1 w-full">
-            <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider mb-1">Serviço de Venda</label>
-            <select className="bg-zinc-950 border border-zinc-700 text-zinc-200 p-2 rounded-none focus:border-blue-700 focus:outline-none font-mono text-sm h-[42px] w-full" value={calcData.serviceId} onChange={e => setCalcData({...calcData, serviceId: e.target.value, selectedExtras: []})}>
-            <option value="">Selecione...</option>
-            {services.map(p => <option key={p.id} value={p.id}>{p.name} ({p.w}x{p.h}cm)</option>)}
-            </select>
+            <div className="text-center bg-zinc-900 p-3 border border-zinc-800 mb-4">
+            <p className="text-xs uppercase text-zinc-500 mb-1">Valor Total do Item</p>
+            <p className="text-3xl font-black text-white tracking-tight">{formatCurrency(calcResult.finalPrice)}</p>
             </div>
 
-            {/* [MODIFICADO] Quantidade com Botão de Calcular Cabimento */}
-            <div className="flex gap-2 items-end">
-            <div className="flex-1">
-            <Input label="Quantidade Total" placeholder="Ex: 1000" type="number" value={calcData.quantity} onChange={e => setCalcData({...calcData, quantity: e.target.value})} />
-            </div>
-            <Button
-            onClick={fillOneSheetQty}
-            variant="secondary"
-            className="h-[42px] mb-4 text-xs px-3 border-dashed border-zinc-600 text-zinc-400 hover:text-emerald-400 hover:border-emerald-500"
-            title="Calcular quantos cabem em 1 folha"
-            >
-            <Grid size={18} className="mr-1"/> PREENCHER
+            <Button onClick={addToCart} variant="primary" className="w-full">
+            <Plus className="w-4 h-4 mr-2"/> Adicionar ao Pedido
             </Button>
             </div>
-            </div>
-
-            {selectedService && selectedService.extras && selectedService.extras.length > 0 && (
-              <div className="bg-zinc-950 p-4 border border-zinc-800">
-              <p className="text-xs uppercase text-zinc-500 font-bold mb-2 flex items-center gap-1"><Scissors size={12}/> Adicionais Disponíveis</p>
-              <div className="grid grid-cols-2 gap-2">
-              {selectedService.extras.map(extra => (
-                <label key={extra.id} className={`flex items-center gap-2 p-2 border cursor-pointer transition-colors ${calcData.selectedExtras?.includes(extra.id) ? 'border-emerald-600 bg-emerald-900/10' : 'border-zinc-700 hover:border-zinc-600'}`}>
-                <input type="checkbox" checked={calcData.selectedExtras?.includes(extra.id) || false} onChange={() => toggleExtraSelection(extra.id)} className="accent-emerald-500 w-4 h-4"/>
-                <div className="flex flex-col"><span className="text-sm text-zinc-200">{extra.name}</span><span className="text-xs text-emerald-500 font-mono">+{formatCurrency(extra.value)}/fl</span></div>
-                </label>
-              ))}
-              </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-4">
-            <Input label="Acabamento Extra" placeholder="0.00" type="number" value={calcData.finishCost} onChange={e => setCalcData({...calcData, finishCost: e.target.value})} />
-            <div className="flex flex-col gap-1 w-full">
-            <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider mb-1">Prazo de Entrega</label>
-            <select className="bg-zinc-950 border border-zinc-700 text-zinc-200 p-2 rounded-none focus:border-blue-700 focus:outline-none font-mono text-sm h-[38px] w-full" value={calcData.deliveryTime} onChange={e => setCalcData({...calcData, deliveryTime: e.target.value})}>
-            <option value="1 dia útil">1 dia útil</option>
-            <option value="2 dias úteis">2 dias úteis</option>
-            <option value="3 dias úteis">3 dias úteis</option>
-            <option value="5 dias úteis">5 dias úteis</option>
-            </select>
-            </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4">
-            <Input label="Desconto Especial (R$)" placeholder="0.00" type="number" value={calcData.discount} onChange={e => setCalcData({...calcData, discount: e.target.value})} />
-            </div>
-
-            <Button onClick={calculateBudget} className="w-full py-3" variant="secondary">Calcular Item</Button>
-
-            {calcResult && (
-              <div className="bg-zinc-950 border border-zinc-800 p-4 mt-4 animate-in zoom-in-95 duration-200">
-              <div className="space-y-1 mb-4 border-b border-zinc-800 pb-4">
-              <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Aproveitamento:</span><span className="text-zinc-300 font-bold font-mono">{calcResult.fit} un/fl</span></div>
-              <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Total de Folhas:</span><span className="text-zinc-300 font-bold font-mono">{calcResult.totalSheets} fl</span></div>
-              <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Valor das Folhas:</span><span className="text-zinc-300 font-bold font-mono">{formatCurrency(calcResult.baseSheetsPrice)}</span></div>
-              {calcResult.extrasPrice > 0 && <div className="flex justify-between items-center text-zinc-500 text-xs"><span>Valor dos Extras:</span><span className="text-emerald-500 font-bold font-mono">{formatCurrency(calcResult.extrasPrice)}</span></div>}
-              </div>
-
-              {calcResult.discount > 0 && <div className="flex justify-between items-center mb-2 text-red-400 text-xs"><span>Desconto Aplicado:</span><span>- {formatCurrency(calcResult.discount)}</span></div>}
-
-              <div className="text-center bg-zinc-900 p-3 border border-zinc-800 mb-4">
-              <p className="text-xs uppercase text-zinc-500 mb-1">Valor Total do Item</p>
-              <p className="text-3xl font-black text-white tracking-tight">{formatCurrency(calcResult.finalPrice)}</p>
-              </div>
-
-              <Button onClick={addToCart} variant="primary" className="w-full">
-              <Plus className="w-4 h-4 mr-2"/> Adicionar ao Pedido
-              </Button>
-              </div>
-            )}
-            </>
+          )}
+          </>
         )}
 
         {saleTab === 'product' && (
@@ -2677,11 +2437,7 @@ export default function GraficaEmbyte() {
         if (inventoryFilter === 'low') return matchSearch && item.quantity <= item.minStock;
         return matchSearch && item.category === inventoryFilter;
       });
-      // [CORREÇÃO] Só soma valor de estoque se NÃO for terceirizado
-      const totalValue = inventory.reduce((acc, curr) => {
-        if (curr.category === 'Terceirizado') return acc;
-        return acc + (curr.quantity * curr.price);
-      }, 0);
+      const totalValue = inventory.reduce((acc, curr) => acc + (curr.quantity * curr.price), 0);
       return (
         <div className="space-y-6 animate-in fade-in duration-300">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2772,27 +2528,7 @@ export default function GraficaEmbyte() {
           <td className="px-6 py-4 text-zinc-200 font-bold">{service.name}</td>
           <td className="px-6 py-4 text-emerald-400 font-mono font-bold">{formatCurrency(service.basePrice)}</td>
           <td className="px-6 py-4 text-zinc-500 text-xs uppercase">{service.pricingType === 'area' ? 'Por m²' : 'Por Folha'}</td>
-          <td className="px-6 py-4">
-          <div className="flex flex-col gap-1">
-          {(service.materials && service.materials.length > 0) ? (
-            service.materials.map((mId, idx) => {
-              const m = inventory.find(i => i.id == mId);
-              if(!m) return null;
-              return (
-                <span key={idx} className="text-zinc-300 text-xs flex items-center gap-1">
-                <Package size={10} className="text-blue-500"/> {m.name}
-                </span>
-              );
-            })
-          ) : (
-            // Fallback para exibir o antigo se ainda não foi salvo no novo formato
-            (() => {
-              const old = inventory.find(i => i.id === service.stockId);
-              return old ? <span className="text-zinc-300 text-xs flex items-center gap-1"><Package size={10} className="text-blue-500"/> {old.name}</span> : <span className="text-zinc-600 text-xs">-</span>;
-            })()
-          )}
-          </div>
-          </td>
+          <td className="px-6 py-4">{linkedStock ? <span className="text-zinc-300 text-xs flex items-center gap-1"><Package size={12} className="text-blue-500"/> {linkedStock.name}</span> : <span className="text-red-500 text-xs italic">Não vinculado</span>}</td>
           <td className="px-6 py-4"><div className="flex flex-wrap gap-1">{service.extras?.map(ex => <span key={ex.id} className="px-2 py-1 bg-zinc-800 text-xs border border-zinc-700">{ex.name}</span>)}</div></td>
           <td className="px-6 py-4 flex gap-2">
           <Button onClick={() => openModal('service', service)} variant="secondary" className="px-2 py-1"><Edit size={14}/></Button>
@@ -2938,61 +2674,18 @@ export default function GraficaEmbyte() {
           </select>
           </div>
           {tempService.pricingType === 'sheet' && (
-            // [MODIFICADO] Mudamos de grid-cols-2 para grid-cols-3 para caber a margem
-            <div className="grid grid-cols-3 gap-4">
-            <Input label="Largura Folha (cm)" type="number" value={tempService.w} onChange={e => setTempService({...tempService, w: e.target.value})} />
-            <Input label="Altura Folha (cm)" type="number" value={tempService.h} onChange={e => setTempService({...tempService, h: e.target.value})} />
-            {/* [NOVO] Campo de Margem */}
-            <Input label="Margem/Pinça (cm)" type="number" value={tempService.margin} onChange={e => setTempService({...tempService, margin: e.target.value})} placeholder="0.5" />
+            <div className="grid grid-cols-2 gap-4">
+            <Input label="Largura Base (cm)" type="number" value={tempService.w} onChange={e => setTempService({...tempService, w: e.target.value})} />
+            <Input label="Altura Base (cm)" type="number" value={tempService.h} onChange={e => setTempService({...tempService, h: e.target.value})} />
             </div>
           )}
-          <div className="bg-zinc-900/50 border border-zinc-800 p-3 mb-4">
-          <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider mb-2 block">
-          Materiais de Custo (Composição)
-          </label>
-
-          {/* Lista dos selecionados */}
-          <div className="flex flex-wrap gap-2 mb-3">
-          {tempService.materials && tempService.materials.length > 0 ? (
-            tempService.materials.map((matId, idx) => {
-              const mat = inventory.find(i => i.id == matId);
-              return (
-                <div key={idx} className="bg-zinc-800 text-xs px-2 py-1 border border-zinc-700 flex items-center gap-2 rounded">
-                <span className="text-zinc-200">{mat ? mat.name : 'Item removido'}</span>
-                <span className="text-emerald-500 font-mono">{mat ? formatCurrency(mat.price) : ''}</span>
-                <button type="button" onClick={() => {
-                  const newMats = tempService.materials.filter((_, i) => i !== idx);
-                  setTempService({...tempService, materials: newMats});
-                }} className="text-red-500 hover:text-white"><X size={12}/></button>
-                </div>
-              );
-            })
-          ) : (
-            <span className="text-zinc-600 text-xs italic">Nenhum material vinculado (Custo Zero).</span>
-          )}
-          </div>
-
-          {/* Seletor para adicionar */}
-          <div className="flex gap-2">
-          <select
-          className="bg-zinc-950 border border-zinc-700 text-zinc-200 p-2 rounded-none focus:border-blue-700 outline-none text-sm flex-1 font-mono"
-          value={tempStockSelection}
-          onChange={e => setTempStockSelection(e.target.value)}
-          >
-          <option value="">Selecione para adicionar...</option>
-          {inventory.map(item => (
-            <option key={item.id} value={item.id}>
-            {item.name} ({formatCurrency(item.price)})
-            </option>
-          ))}
+          <Input label={tempService.pricingType === 'area' ? "Preço por m² (R$)" : "Preço Base (por folha)"} type="number" value={tempService.basePrice} onChange={e => setTempService({...tempService, basePrice: e.target.value})} />
+          <div className="flex flex-col gap-1 mb-4 w-full">
+          <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider">Material Estoque Vinculado</label>
+          <select className="bg-zinc-950 border border-zinc-700 text-zinc-200 p-2 rounded-none focus:border-blue-700 focus:outline-none placeholder-zinc-700 font-mono text-sm w-full" value={tempService.stockId || ''} onChange={e => setTempService({...tempService, stockId: parseInt(e.target.value)})}>
+          <option value="">Nenhum</option>
+          {inventory.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
-          <Button type="button" variant="secondary" onClick={() => {
-            if(!tempStockSelection) return;
-            const current = tempService.materials || [];
-            setTempService({...tempService, materials: [...current, parseInt(tempStockSelection)]});
-            setTempStockSelection('');
-          }} className="px-3"><Plus size={16}/></Button>
-          </div>
           </div>
           <div className="border-t border-zinc-800 pt-4 mt-2">
           <label className="text-xs uppercase text-zinc-500 font-bold tracking-wider mb-2 block">Extras (Soma ao preço base)</label>
@@ -3317,64 +3010,27 @@ export default function GraficaEmbyte() {
       <div className="text-xs text-zinc-500 font-mono mt-1 uppercase flex items-center gap-1"><div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>{user.name}</div>
       </div>
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-      {/* GRUPO 1: VENDAS E ATENDIMENTO (Admin e Vendedor) */}
       {(user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && (
         <>
-        <button onClick={() => setView('clientes')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'clientes' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
-        <Users size={18} /> Clientes
-        </button>
-
-        {/* [NOVO] Botão Atendimento */}
-        <button onClick={() => setView('atendimento')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'atendimento' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
-        <Headset size={18} /> Atendimento
-        </button>
-
-        <button onClick={() => setView('vendas')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'vendas' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
-        <ShoppingCart size={18} /> Orçamentos
-        </button>
-
-        <button onClick={() => setView('caixa')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'caixa' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
-        <Wallet size={18} /> Caixa Diário
-        </button>
+        <button onClick={() => setView('clientes')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'clientes' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><Users size={18} /> Clientes</button>
+        <button onClick={() => setView('vendas')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'vendas' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><ShoppingCart size={18} /> Orçamentos</button>
+        <button onClick={() => setView('caixa')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'caixa' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><Wallet size={18} /> Caixa Diário</button>
         </>
       )}
-
-      {/* GRUPO 2: PRODUÇÃO (Todos) */}
-      <button onClick={() => setView('producao')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'producao' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
-      <Printer size={18} /> Produção
-      </button>
-
-      {/* GRUPO 3: ADMINISTRAÇÃO (Admin Apenas) */}
+      <button onClick={() => setView('producao')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'producao' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><Printer size={18} /> Produção</button>
       {user.role === ROLES.ADMIN && (
         <>
-        <button onClick={() => setView('financeiro')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'financeiro' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
-        <DollarSign size={18} /> Financeiro
-        </button>
-        <button onClick={() => setView('relatorios')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'relatorios' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
-        <FileBarChart size={18} /> Relatórios
-        </button>
-        <button onClick={() => setView('precificacao')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'precificacao' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
-        <Tag size={18} /> Precificação
-        </button>
+        <button onClick={() => setView('financeiro')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'financeiro' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><DollarSign size={18} /> Financeiro</button>
+        <button onClick={() => setView('relatorios')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'relatorios' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><FileBarChart size={18} /> Relatórios</button>
+        <button onClick={() => setView('precificacao')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'precificacao' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><Tag size={18} /> Precificação</button>
         </>
       )}
-
-      {/* GRUPO 4: ESTOQUE E CONFIG (Exceto Designer) */}
-      {user.role !== ROLES.DESIGNER && (
-        <button onClick={() => setView('estoque')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'estoque' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
-        <Package size={18} /> Estoque
-        </button>
-      )}
-
-      {user.role === ROLES.ADMIN && (
-        <button onClick={() => setView('configuracoes')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'configuracoes' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}>
-        <Settings size={18} /> Configurações
-        </button>
-      )}
+      {user.role !== ROLES.DESIGNER && <button onClick={() => setView('estoque')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'estoque' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><Package size={18} /> Estoque</button>}
+      {user.role === ROLES.ADMIN && <button onClick={() => setView('configuracoes')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium uppercase tracking-wider transition-all border-l-2 ${view === 'configuracoes' ? 'bg-zinc-800 text-white border-blue-600' : 'text-zinc-400 border-transparent hover:bg-zinc-800'}`}><Settings size={18} /> Configurações</button>}
       </nav>
       <div className="p-4 border-t border-zinc-800">
       <Button onClick={() => {
-        localStorage.removeItem('embyte_user');
+        localStorage.removeItem('embyte_user'); // [NOVO] Limpa o armazenamento
         setUser(null);
       }} variant="secondary" className="w-full flex items-center justify-center gap-2 text-xs"><LogOut size={14} /> Sair</Button>
       </div>
@@ -3384,7 +3040,6 @@ export default function GraficaEmbyte() {
       <div>
       <h1 className="text-2xl font-bold text-white uppercase tracking-tight">
       {view === 'vendas' ? 'Vendas e Orçamentos' :
-        view === 'atendimento' ? 'Central de Atendimento' : // [NOVO] Título
         view === 'clientes' ? 'Gestão de Clientes' :
         view === 'caixa' ? 'Fluxo de Caixa Diário' :
         view === 'producao' ? 'Chão de Fábrica (OPs)' :
@@ -3400,9 +3055,7 @@ export default function GraficaEmbyte() {
         </p>
         </div>
         </header>
-
         {view === 'clientes' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && ClientesView()}
-        {view === 'atendimento' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && renderAtendimentoView()}
         {view === 'vendas' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && VendasView()}
         {view === 'caixa' && (user.role === ROLES.ADMIN || user.role === ROLES.VENDEDOR) && CaixaView()}
         {view === 'producao' && ProducaoView()}
